@@ -1,0 +1,9 @@
+pre-push:
+  parallel: true
+  jobs:
+    - name: lint
+      run: bun run lint
+    - name: type-check
+      run: bunx tsc --noEmit
+    - name: test
+      run: bun run test

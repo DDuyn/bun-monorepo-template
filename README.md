@@ -34,7 +34,7 @@ Fullstack TypeScript monorepo template with **Bun**, **Hono**, **SolidJS**, and 
 ## Getting started
 
 ```bash
-# Install dependencies
+# Install dependencies (also sets up pre-push git hooks via lefthook)
 bun install
 
 # Copy environment variables

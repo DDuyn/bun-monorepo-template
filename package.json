@@ -13,9 +13,11 @@
     "build": "bun run --filter '*' build",
     "db:generate": "bun run --filter backend db:generate",
     "db:migrate": "bun run --filter backend db:migrate",
-    "clean": "bun run scripts/clean-template.ts"
+    "clean": "bun run scripts/clean-template.ts",
+    "postinstall": "lefthook install"
   },
   "devDependencies": {
-    "backend": "workspace:*"
+    "backend": "workspace:*",
+    "lefthook": "^2.1.1"
   }
 }
