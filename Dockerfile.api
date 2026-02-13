@@ -1,0 +1,19 @@
+FROM oven/bun:1 AS base
+WORKDIR /app
+
+# Install dependencies
+COPY package.json bun.lock ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/backend/package.json ./apps/backend/
+RUN bun install --frozen-lockfile --production
+
+# Copy source
+COPY packages/shared ./packages/shared
+COPY apps/backend ./apps/backend
+
+# Build
+RUN bun run --filter backend build
+
+EXPOSE 3000
+
+CMD ["bun", "run", "apps/backend/dist/index.js"]
