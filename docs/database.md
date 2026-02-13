@@ -5,7 +5,7 @@
 - **Turso** — managed SQLite-compatible database (libSQL) with local dev support
 - **Drizzle ORM** — type-safe query builder and schema definition
 - **@libsql/client** — Turso's JavaScript/TypeScript client
-- **drizzle-kit** — CLI for schema push and introspection
+- **drizzle-kit** — CLI for schema migrations and introspection
 
 ## Connection setup
 
@@ -102,11 +102,11 @@ export { itemsTable } from '../../modules/items/items.table';
 
 This file serves two purposes:
 1. **Drizzle client** — passed to `drizzle(client, { schema })` so the ORM knows about all tables
-2. **drizzle-kit** — the `db:push` command reads this file to detect schema changes
+2. **drizzle-kit** — the `db:generate` command reads this file to detect schema changes
 
 When you add a new module, you must add its table export here.
 
-## Schema push
+## Migrations
 
 ### Drizzle Kit configuration
 
@@ -126,21 +126,41 @@ export default {
 
 ### Workflow
 
+Schema changes use file-based migrations. This gives you a versioned history of every change, committed to Git alongside the code.
+
 ```bash
 # 1. Make changes to table definitions in [feature].table.ts
-# 2. Export new tables from schema.ts
+# 2. Export new tables from schema.ts (if adding a new module)
 
-# 3. Push schema to database
-bun run db:push
+# 3. Generate a migration file
+bun run --filter backend db:generate
+
+# 4. Review the generated SQL in src/infrastructure/db/migrations/
+# 5. Apply the migration locally
+bun run --filter backend db:migrate
+
+# 6. Run tests to verify everything works
+bun test
+
+# 7. Commit the migration file + schema changes and push
 ```
 
-`db:push` compares your current schema code against the live database and applies changes directly. There are no migration files to manage — this is simpler and works well for projects where you don't need a migration history.
+`db:generate` compares your current schema code against the previous snapshot and creates a new `.sql` file in `src/infrastructure/db/migrations/`. `db:migrate` applies all pending migrations to the database, tracking which ones have been applied in a `__drizzle_migrations` table.
+
+### Production deployment
+
+Migrations run automatically in the CD pipeline. The `deploy-api.yml` workflow executes `db:migrate` against the Turso production database before triggering the Render deploy. If a migration fails, the deploy is aborted.
+
+This requires two GitHub repository secrets:
+- `TURSO_DATABASE_URL` — your Turso database URL
+- `TURSO_AUTH_TOKEN` — your Turso auth token
 
 ### Important notes
 
-- `db:push` is **not reversible**. It applies changes directly to the database. For rollbacks, you'd need to modify the schema and push again.
-- In production, push schema changes before deploying new code that depends on them.
-- For development, you can delete `local.db` and re-run `db:push` to start fresh.
+- Always review generated migration SQL before committing. `db:generate` does not connect to the database — it only compares schema files against local snapshots.
+- Migrations are applied in order and only once. Drizzle tracks applied migrations in the `__drizzle_migrations` table.
+- Migrations are **not reversible** by default. To roll back, create a new migration that undoes the change.
+- For local development, you can delete `local.db` and re-run `db:migrate` to recreate the database from scratch.
 
 ## Querying patterns
 

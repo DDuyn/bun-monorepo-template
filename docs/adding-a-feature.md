@@ -376,10 +376,11 @@ app.route('/api/tags', tagsApi);
 
 Create `apps/backend/src/modules/tags/tags.test.ts`. See the [testing guide](./testing.md) for details on how to structure tests with mock repositories.
 
-## Step 10: Push schema to database
+## Step 10: Generate and apply migration
 
 ```bash
-bun run db:push   # Drizzle compares schema.ts against the live database and applies changes
+bun run --filter backend db:generate   # Generates a SQL migration file from schema changes
+bun run --filter backend db:migrate    # Applies pending migrations to the local database
 ```
 
 ## Checklist
@@ -394,4 +395,4 @@ bun run db:push   # Drizzle compares schema.ts against the live database and app
 - [ ] Hono sub-app with Zod validation and JWT guard
 - [ ] Route mounted in `app.ts`
 - [ ] Tests for domain + service layers
-- [ ] Schema pushed to database (`bun run db:push`)
+- [ ] Migration generated and applied (`db:generate` + `db:migrate`)

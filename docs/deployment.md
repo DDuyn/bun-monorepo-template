@@ -18,13 +18,26 @@ This template deploys to three free-tier services:
 4. Get the connection URL: `turso db show <your-db-name> --url`
 5. Create an auth token: `turso db tokens create <your-db-name>`
 
-### Push schema
+### Push initial schema
+
+For the very first setup of a new database:
 
 ```bash
-TURSO_DATABASE_URL=<url> TURSO_AUTH_TOKEN=<token> bun run db:push
+TURSO_DATABASE_URL=<url> TURSO_AUTH_TOKEN=<token> bun run --filter backend db:migrate
 ```
 
-This pushes your current Drizzle schema directly to the remote database. No migration files needed — `db:push` compares your schema code against the live database and applies changes.
+This applies all migration files to the remote database. After the initial setup, migrations run automatically in the CD pipeline on every deploy (see [CI/CD flow](#cicd-flow)).
+
+### Schema changes
+
+When you modify table definitions, generate a migration and commit it:
+
+```bash
+bun run --filter backend db:generate   # Creates a new .sql file in migrations/
+bun run --filter backend db:migrate    # Applies it locally to verify
+# Commit the migration file + push to main
+# The CD pipeline applies it to production automatically
+```
 
 ### Local development
 
@@ -48,11 +61,14 @@ In development, Turso's libSQL client supports local SQLite files. The default `
 
 ### Auto-deploy via GitHub Actions
 
-The `deploy-api.yml` workflow triggers a Render deploy hook after CI passes on `main`.
+The `deploy-api.yml` workflow runs database migrations and triggers a Render deploy hook after CI passes on `main`.
 
 To set it up:
 1. In Render dashboard → your service → Settings → **Deploy Hook** → copy the URL
-2. In GitHub → repo Settings → Secrets → add `RENDER_DEPLOY_HOOK_URL` with the copied URL
+2. In GitHub → repo Settings → Secrets → add:
+   - `RENDER_DEPLOY_HOOK_URL` with the copied URL
+   - `TURSO_DATABASE_URL` with your Turso database URL
+   - `TURSO_AUTH_TOKEN` with your Turso auth token
 
 ### render.yaml
 
@@ -97,7 +113,7 @@ CI workflow (ci.yml)
     └── test (bun test)
     │
     ▼ (on success)
-    ├── deploy-api.yml → triggers Render deploy hook
+    ├── deploy-api.yml → runs db:migrate against Turso, then triggers Render deploy hook
     └── deploy-web.yml → builds frontend, deploys to Cloudflare Pages
 ```
 

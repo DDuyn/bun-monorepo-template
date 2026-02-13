@@ -40,8 +40,8 @@ bun install
 # Copy environment variables
 cp .env.example .env
 
-# Push schema to database (creates local.db)
-bun run db:push
+# Apply migrations (creates local.db)
+bun run db:migrate
 
 # Start development (backend + frontend)
 bun run dev
@@ -61,7 +61,8 @@ The backend runs on `http://localhost:3000` and the frontend on `http://localhos
 | `bun run lint`     | Lint with Biome                      |
 | `bun run lint:fix` | Lint and auto-fix                    |
 | `bun run build`    | Build all apps                       |
-| `bun run db:push`  | Push Drizzle schema to database      |
+| `bun run db:generate` | Generate migration from schema changes |
+| `bun run db:migrate`  | Apply pending migrations to database   |
 | `bun run clean`    | Remove example items module          |
 
 ## Backend architecture
@@ -110,7 +111,7 @@ The template includes CI/CD workflows for deploying to free-tier services:
 
 - **API**: Render (Docker) — auto-deploys after CI passes via deploy hook
 - **Frontend**: Cloudflare Pages — built and deployed via GitHub Actions
-- **Database**: Turso — managed libSQL, push schema manually before deploy
+- **Database**: Turso — managed libSQL, migrations run automatically in CD pipeline
 
 See [docs/deployment.md](docs/deployment.md) for full setup instructions.
 
@@ -132,7 +133,7 @@ Run `bun run clean` to remove the example items module. This leaves you with the
 
 - [Architecture](docs/architecture.md) — Project structure and design decisions
 - [Backend](docs/backend.md) — API layer, middleware, error handling
-- [Database](docs/database.md) — Turso, Drizzle ORM, schema push
+- [Database](docs/database.md) — Turso, Drizzle ORM, migrations
 - [Frontend](docs/frontend.md) — SolidJS, routing, API client
 - [Testing](docs/testing.md) — TDD approach, test patterns
 - [Result Pattern](docs/result-pattern.md) — Error handling without exceptions

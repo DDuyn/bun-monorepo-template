@@ -11,7 +11,8 @@
     "lint": "bunx biome check .",
     "lint:fix": "bunx biome check --write .",
     "build": "bun run --filter '*' build",
-    "db:push": "bun run --filter backend db:push",
+    "db:generate": "bun run --filter backend db:generate",
+    "db:migrate": "bun run --filter backend db:migrate",
     "clean": "bun run scripts/clean-template.ts"
   },
   "devDependencies": {
