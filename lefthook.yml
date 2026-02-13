@@ -4,6 +4,6 @@ pre-push:
     - name: lint
       run: bun run lint
     - name: type-check
-      run: bunx tsc --noEmit
+      run: bun run typecheck
     - name: test
       run: bun run test

@@ -8,6 +8,7 @@
     "dev:web": "bun run --filter frontend dev",
     "test": "bun run --filter '*' test",
     "test:api": "bun run --filter backend test",
+    "typecheck": "tsc --noEmit -p apps/backend/tsconfig.json && tsc --noEmit -p apps/frontend/tsconfig.json",
     "lint": "bunx biome check .",
     "lint:fix": "bunx biome check --write .",
     "build": "bun run --filter '*' build",
