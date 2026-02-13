@@ -12,9 +12,6 @@ RUN bun install --frozen-lockfile
 COPY packages/shared ./packages/shared
 COPY apps/backend ./apps/backend
 
-# Build
-RUN bun run --filter backend build
-
 EXPOSE 3000
 
-CMD ["bun", "run", "apps/backend/dist/index.js"]
+CMD ["bun", "run", "apps/backend/src/index.ts"]
