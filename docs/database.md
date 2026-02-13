@@ -2,40 +2,44 @@
 
 ## Stack
 
-- **SQLite** — embedded database, no external server needed
+- **Turso** — managed SQLite-compatible database (libSQL) with local dev support
 - **Drizzle ORM** — type-safe query builder and schema definition
-- **bun:sqlite** — Bun's native SQLite driver (faster than better-sqlite3)
-- **drizzle-kit** — CLI for generating and running migrations
+- **@libsql/client** — Turso's JavaScript/TypeScript client
+- **drizzle-kit** — CLI for schema push and introspection
 
 ## Connection setup
 
 The database client is configured in `apps/backend/src/infrastructure/db/client.ts`:
 
 ```ts
-import { Database } from 'bun:sqlite';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { createClient } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
 import { env } from '../../config/env';
 import * as schema from './schema';
 
-const sqlite = new Database(env.DATABASE_URL);
-sqlite.exec('PRAGMA journal_mode = WAL;');
-sqlite.exec('PRAGMA foreign_keys = ON;');
+const client = createClient({
+  url: env.TURSO_DATABASE_URL,
+  authToken: env.TURSO_AUTH_TOKEN,
+});
 
-export const db = drizzle(sqlite, { schema });
+export const db = drizzle(client, { schema });
 export type DB = typeof db;
 ```
 
-### SQLite pragmas
+### Environment variables
 
-Two pragmas are set at connection time:
+| Variable             | Required | Default           | Description                          |
+| -------------------- | -------- | ----------------- | ------------------------------------ |
+| `TURSO_DATABASE_URL` | No       | `file:./local.db` | libSQL connection URL                |
+| `TURSO_AUTH_TOKEN`   | No       | —                 | Auth token for remote Turso database |
 
-**`journal_mode = WAL`** (Write-Ahead Logging): Allows concurrent reads while a write is happening. Without this, SQLite uses rollback journal mode where readers block writers and vice versa. WAL is the recommended mode for server applications.
+### Local development
 
-**`foreign_keys = ON`**: SQLite has foreign key support but it's **disabled by default**. Without this pragma, you could insert a row with a `userId` that doesn't exist in the `users` table and SQLite wouldn't complain. This must be set on every connection (it's not persisted).
+In development, `TURSO_DATABASE_URL=file:./local.db` tells the libSQL client to use a local SQLite file. No Turso account or internet connection is needed. The file is created automatically on first use.
 
-### DATABASE_URL
+### Production
 
-The `DATABASE_URL` environment variable points to the SQLite file. Default is `./local.db` (created in the backend working directory). For production, you'd typically use an absolute path.
+In production, set `TURSO_DATABASE_URL` to your Turso database URL (e.g. `libsql://your-db-name-your-org.turso.io`) and `TURSO_AUTH_TOKEN` to a valid auth token. See the [deployment guide](./deployment.md) for setup instructions.
 
 ## Table definitions
 
@@ -83,7 +87,7 @@ export const itemsTable = sqliteTable('items', {
 
 **`$defaultFn` for defaults**: `.$defaultFn(() => new Date())` sets the default in application code, not in SQL. This is intentional — our domain entities set these values explicitly, so the SQL default is only a safety net.
 
-**Foreign keys**: The `items.userId` references `usersTable.id`. Combined with the `foreign_keys = ON` pragma, this prevents orphaned items.
+**Foreign keys**: The `items.userId` references `usersTable.id`. libSQL enforces foreign keys by default.
 
 **Enums as text**: `text('status', { enum: ['active', 'inactive'] })` stores status as a string. SQLite doesn't have native enums, but Drizzle generates TypeScript types from the enum array, giving you compile-time safety.
 
@@ -97,12 +101,12 @@ export { itemsTable } from '../../modules/items/items.table';
 ```
 
 This file serves two purposes:
-1. **Drizzle client** — passed to `drizzle(sqlite, { schema })` so the ORM knows about all tables
-2. **drizzle-kit** — the migration generator reads this file to detect schema changes
+1. **Drizzle client** — passed to `drizzle(client, { schema })` so the ORM knows about all tables
+2. **drizzle-kit** — the `db:push` command reads this file to detect schema changes
 
 When you add a new module, you must add its table export here.
 
-## Migrations
+## Schema push
 
 ### Drizzle Kit configuration
 
@@ -112,9 +116,10 @@ Defined in `apps/backend/drizzle.config.ts`:
 export default {
   schema: './src/infrastructure/db/schema.ts',
   out: './src/infrastructure/db/migrations',
-  dialect: 'sqlite',
+  dialect: 'turso',
   dbCredentials: {
-    url: process.env.DATABASE_URL || './local.db',
+    url: process.env.TURSO_DATABASE_URL || 'file:./local.db',
+    authToken: process.env.TURSO_AUTH_TOKEN,
   },
 } satisfies Config;
 ```
@@ -125,23 +130,17 @@ export default {
 # 1. Make changes to table definitions in [feature].table.ts
 # 2. Export new tables from schema.ts
 
-# 3. Generate migration files
-bun run db:generate
-
-# 4. Review the generated SQL in infrastructure/db/migrations/
-
-# 5. Apply migrations
-bun run db:migrate
+# 3. Push schema to database
+bun run db:push
 ```
 
-`db:generate` compares your current schema code against the last migration snapshot and produces a new SQL migration file. `db:migrate` applies all pending migrations to the database.
+`db:push` compares your current schema code against the live database and applies changes directly. There are no migration files to manage — this is simpler and works well for projects where you don't need a migration history.
 
 ### Important notes
 
-- Migrations are **forward-only**. Drizzle doesn't generate down migrations. For rollbacks, you'd write SQL manually or restore from backup.
-- The migration files are committed to git. They represent the schema history.
-- Never edit generated migration files after they've been applied. If you need to adjust, create a new migration.
-- For development, you can delete `local.db` and re-run `db:migrate` to start fresh.
+- `db:push` is **not reversible**. It applies changes directly to the database. For rollbacks, you'd need to modify the schema and push again.
+- In production, push schema changes before deploying new code that depends on them.
+- For development, you can delete `local.db` and re-run `db:push` to start fresh.
 
 ## Querying patterns
 
@@ -184,9 +183,10 @@ await db
 
 Note the use of `and()` to scope queries by both `id` and `userId`. This ensures user isolation at the query level — a user can never accidentally access another user's data.
 
-## Why SQLite
+## Why Turso
 
-- **Zero ops**: No database server to manage. The database is a file.
-- **Fast**: bun:sqlite is significantly faster than PostgreSQL for single-server workloads.
-- **Good enough**: For personal projects and small-to-medium apps, SQLite handles thousands of concurrent users. You'd only need PostgreSQL for multi-server deployments or complex querying needs.
+- **Local dev, cloud prod**: Uses a local SQLite file in development (zero setup) and Turso's managed service in production.
+- **Free tier**: 9 GB storage, 500M row reads/month — more than enough for personal projects and small apps.
+- **SQLite compatible**: Same query semantics as SQLite. If you outgrow Turso, migrating to another SQLite-compatible service or self-hosted libSQL is straightforward.
+- **Edge-ready**: Turso supports embedded replicas for low-latency reads at the edge, though this template doesn't use that feature.
 - **Easy to swap**: Since repositories abstract the data layer, migrating to PostgreSQL later means changing the Drizzle driver and table definitions, not business logic.

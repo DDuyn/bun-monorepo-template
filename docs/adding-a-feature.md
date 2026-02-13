@@ -13,7 +13,7 @@ This guide walks through adding a new backend feature module from scratch. We'll
 7. Create the Hono sub-app
 8. Mount the route in `app.ts`
 9. Write tests
-10. Generate and run migrations
+10. Push schema to database
 
 ## Step 1: Shared schemas
 
@@ -376,11 +376,10 @@ app.route('/api/tags', tagsApi);
 
 Create `apps/backend/src/modules/tags/tags.test.ts`. See the [testing guide](./testing.md) for details on how to structure tests with mock repositories.
 
-## Step 10: Generate and run migrations
+## Step 10: Push schema to database
 
 ```bash
-bun run db:generate   # Drizzle inspects schema.ts and generates SQL migration files
-bun run db:migrate    # Applies the migration to your local SQLite database
+bun run db:push   # Drizzle compares schema.ts against the live database and applies changes
 ```
 
 ## Checklist
@@ -395,4 +394,4 @@ bun run db:migrate    # Applies the migration to your local SQLite database
 - [ ] Hono sub-app with Zod validation and JWT guard
 - [ ] Route mounted in `app.ts`
 - [ ] Tests for domain + service layers
-- [ ] Migrations generated and applied
+- [ ] Schema pushed to database (`bun run db:push`)

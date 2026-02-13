@@ -4,18 +4,20 @@ Fullstack TypeScript monorepo template with **Bun**, **Hono**, **SolidJS**, and 
 
 ## Stack
 
-| Layer       | Technology                |
-| ----------- | ------------------------- |
-| Runtime     | Bun                       |
-| Monorepo    | Bun workspaces            |
-| Backend     | Hono                      |
-| Frontend    | SolidJS + Vite            |
-| Database    | SQLite + Drizzle ORM      |
-| Auth        | JWT (register + login)    |
-| Validation  | Zod                       |
-| Styling     | TailwindCSS v4            |
-| Testing     | Bun test                  |
-| Linting     | Biome                     |
+| Layer       | Technology                          |
+| ----------- | ----------------------------------- |
+| Runtime     | Bun                                 |
+| Monorepo    | Bun workspaces                      |
+| Backend     | Hono                                |
+| Frontend    | SolidJS + Vite                      |
+| Database    | Turso (libSQL) + Drizzle ORM        |
+| Auth        | JWT (register + login)              |
+| Validation  | Zod                                 |
+| Styling     | TailwindCSS v4                      |
+| Testing     | Bun test                            |
+| Linting     | Biome                               |
+| Deploy API  | Render (Docker, free tier)          |
+| Deploy Web  | Cloudflare Pages (free, unlimited)  |
 
 ## Structure
 
@@ -25,6 +27,8 @@ Fullstack TypeScript monorepo template with **Bun**, **Hono**, **SolidJS**, and 
 │   └── frontend/         # SolidJS SPA
 ├── packages/
 │   └── shared/           # Shared types, schemas, Result type
+├── docs/                 # Documentation
+└── scripts/              # Template utilities
 ```
 
 ## Getting started
@@ -36,11 +40,8 @@ bun install
 # Copy environment variables
 cp .env.example .env
 
-# Generate database migrations
-bun run db:generate
-
-# Run migrations
-bun run db:migrate
+# Push schema to database (creates local.db)
+bun run db:push
 
 # Start development (backend + frontend)
 bun run dev
@@ -50,18 +51,18 @@ The backend runs on `http://localhost:3000` and the frontend on `http://localhos
 
 ## Scripts
 
-| Command          | Description                          |
-| ---------------- | ------------------------------------ |
-| `bun run dev`    | Start all apps in dev mode           |
-| `bun run dev:api`| Start backend only                   |
-| `bun run dev:web`| Start frontend only                  |
-| `bun run test`   | Run all tests                        |
-| `bun run test:api`| Run backend tests only              |
-| `bun run lint`   | Lint with Biome                      |
-| `bun run lint:fix`| Lint and auto-fix                   |
-| `bun run build`  | Build all apps                       |
-| `bun run db:generate` | Generate Drizzle migrations     |
-| `bun run db:migrate`  | Run Drizzle migrations          |
+| Command            | Description                          |
+| ------------------ | ------------------------------------ |
+| `bun run dev`      | Start all apps in dev mode           |
+| `bun run dev:api`  | Start backend only                   |
+| `bun run dev:web`  | Start frontend only                  |
+| `bun run test`     | Run all tests                        |
+| `bun run test:api` | Run backend tests only               |
+| `bun run lint`     | Lint with Biome                      |
+| `bun run lint:fix` | Lint and auto-fix                    |
+| `bun run build`    | Build all apps                       |
+| `bun run db:push`  | Push Drizzle schema to database      |
+| `bun run clean`    | Remove example items module          |
 
 ## Backend architecture
 
@@ -103,6 +104,16 @@ modules/
 **Health**:
 - `GET /api/health` - Health check
 
+## Deployment
+
+The template includes CI/CD workflows for deploying to free-tier services:
+
+- **API**: Render (Docker) — auto-deploys after CI passes via deploy hook
+- **Frontend**: Cloudflare Pages — built and deployed via GitHub Actions
+- **Database**: Turso — managed libSQL, push schema manually before deploy
+
+See [docs/deployment.md](docs/deployment.md) for full setup instructions.
+
 ## Docker
 
 ```bash
@@ -113,15 +124,17 @@ docker build -f Dockerfile.api -t app-api .
 docker build -f Dockerfile.web -t app-web .
 ```
 
-## Adding a new feature module
+## Starting fresh
 
-1. Create a folder in `apps/backend/src/modules/[feature]/`
-2. Define the Drizzle table in `[feature].table.ts`
-3. Export it from `infrastructure/db/schema.ts`
-4. Create domain entities in `[feature].domain.ts`
-5. Create the repository in `[feature].repository.ts`
-6. Create the service with business logic in `[feature].service.ts`
-7. Create the Hono sub-app in `[feature].api.ts`
-8. Register the route in `app.ts`
-9. Add shared Zod schemas in `packages/shared/src/schemas/`
-10. Write tests in `[feature].test.ts`
+Run `bun run clean` to remove the example items module. This leaves you with the auth system, infrastructure, and patterns ready for your own features. See [docs/adding-a-feature.md](docs/adding-a-feature.md) for a step-by-step guide.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — Project structure and design decisions
+- [Backend](docs/backend.md) — API layer, middleware, error handling
+- [Database](docs/database.md) — Turso, Drizzle ORM, schema push
+- [Frontend](docs/frontend.md) — SolidJS, routing, API client
+- [Testing](docs/testing.md) — TDD approach, test patterns
+- [Result Pattern](docs/result-pattern.md) — Error handling without exceptions
+- [Adding a Feature](docs/adding-a-feature.md) — Step-by-step guide
+- [Deployment](docs/deployment.md) — Turso, Render, Cloudflare Pages setup

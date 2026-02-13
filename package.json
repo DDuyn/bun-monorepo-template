@@ -11,12 +11,10 @@
     "lint": "bunx biome check .",
     "lint:fix": "bunx biome check --write .",
     "build": "bun run --filter '*' build",
-    "db:generate": "bun run --filter backend db:generate",
-    "db:migrate": "bun run --filter backend db:migrate",
+    "db:push": "bun run --filter backend db:push",
     "clean": "bun run scripts/clean-template.ts"
   },
   "devDependencies": {
-    "backend": "workspace:*",
-    "better-sqlite3": "^12.6.2"
+    "backend": "workspace:*"
   }
 }

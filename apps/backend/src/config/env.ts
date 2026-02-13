@@ -27,7 +27,8 @@ await loadDotEnvFromRoot();
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
-  DATABASE_URL: z.string().default('./local.db'),
+  TURSO_DATABASE_URL: z.string().default('file:./local.db'),
+  TURSO_AUTH_TOKEN: z.string().optional(),
   JWT_SECRET: z.string().min(1),
 });
 

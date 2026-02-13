@@ -211,9 +211,8 @@ removeDir(
 if (changes > 0) {
   console.log(`\nDone! ${changes} changes applied.\n`);
   console.log('Next steps:');
-  console.log('  1. bun run db:generate    # Generate fresh migrations');
-  console.log('  2. bun run db:migrate     # Create tables');
-  console.log('  3. bun run dev            # Start building\n');
+  console.log('  1. bun run db:push        # Push schema to database');
+  console.log('  2. bun run dev            # Start building\n');
 } else {
   console.log('\nNothing to clean — items module already removed.\n');
 }

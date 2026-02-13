@@ -1,0 +1,20 @@
+# Render Blueprint — https://docs.render.com/blueprint-spec
+# This file is used when connecting the repo to Render via "New > Blueprint Instance".
+# Environment variables (TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, JWT_SECRET)
+# must be set manually in the Render dashboard.
+
+services:
+  - type: web
+    name: api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    plan: free
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: JWT_SECRET
+        sync: false # Must be set manually in dashboard
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

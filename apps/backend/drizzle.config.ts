@@ -3,8 +3,9 @@ import type { Config } from 'drizzle-kit';
 export default {
   schema: './src/infrastructure/db/schema.ts',
   out: './src/infrastructure/db/migrations',
-  dialect: 'sqlite',
+  dialect: 'turso',
   dbCredentials: {
-    url: process.env.DATABASE_URL || './local.db',
+    url: process.env.TURSO_DATABASE_URL || 'file:./local.db',
+    authToken: process.env.TURSO_AUTH_TOKEN,
   },
 } satisfies Config;
