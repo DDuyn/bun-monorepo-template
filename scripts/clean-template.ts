@@ -19,7 +19,7 @@
  *   8. Deletes the old local.db and migrations (you regenerate after cleanup)
  */
 
-import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { rmSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -49,9 +49,9 @@ function removeFile(path: string, label: string) {
   }
 }
 
-function editFile(path: string, replacements: [string, string][], label: string) {
+async function editFile(path: string, replacements: [string, string][], label: string) {
   if (!existsSync(path)) return;
-  let content = readFileSync(path, 'utf-8');
+  let content = await Bun.file(path).text();
   let modified = false;
   for (const [search, replace] of replacements) {
     if (content.includes(search)) {
@@ -60,14 +60,14 @@ function editFile(path: string, replacements: [string, string][], label: string)
     }
   }
   if (modified) {
-    writeFileSync(path, content);
+    await Bun.write(path, content);
     log(label);
     changes++;
   }
 }
 
-function writeFile(path: string, content: string, label: string) {
-  writeFileSync(path, content);
+async function writeFile(path: string, content: string, label: string) {
+  await Bun.write(path, content);
   log(label);
   changes++;
 }
@@ -83,7 +83,7 @@ removeDir(
 );
 
 // 2. Remove items route from app.ts
-editFile(
+await editFile(
   resolve(BACKEND, 'src/app.ts'),
   [
     ["import { itemsApi } from './modules/items/items.api';\n", ''],
@@ -93,7 +93,7 @@ editFile(
 );
 
 // 3. Remove itemsTable from schema barrel
-editFile(
+await editFile(
   resolve(BACKEND, 'src/infrastructure/db/schema.ts'),
   [
     ["export { itemsTable } from '../../modules/items/items.table';\n", ''],
@@ -108,7 +108,7 @@ removeFile(
 );
 
 // 5. Remove item exports from shared index
-editFile(
+await editFile(
   resolve(SHARED, 'src/index.ts'),
   [
     [
@@ -129,7 +129,7 @@ editFile(
 );
 
 // 6. Remove api.items from frontend api client
-editFile(
+await editFile(
   resolve(FRONTEND, 'src/lib/api.ts'),
   [
     [
@@ -157,7 +157,7 @@ editFile(
 );
 
 // 7. Replace Home.tsx with minimal landing page
-writeFile(
+await writeFile(
   resolve(FRONTEND, 'src/pages/Home.tsx'),
   `import { onMount } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
