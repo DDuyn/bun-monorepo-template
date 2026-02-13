@@ -15,7 +15,7 @@
     "db:generate": "bun run --filter backend db:generate",
     "db:migrate": "bun run --filter backend db:migrate",
     "clean": "bun run scripts/clean-template.ts",
-    "postinstall": "lefthook install"
+    "postinstall": "lefthook install || true"
   },
   "devDependencies": {
     "backend": "workspace:*",
