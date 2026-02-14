@@ -9,11 +9,11 @@ This guide walks through adding a new backend feature module from scratch. We'll
 3. Export the table from the schema barrel
 4. Build the domain entity
 5. Create the repository
-6. Create the service
-7. Create the Hono sub-app
+6. Create use-cases (one per operation)
+7. Create the Hono sub-app (wires use-cases)
 8. Mount the route in `app.ts`
-9. Write tests
-10. Push schema to database
+9. Write tests (one file per use-case + one for the entity)
+10. Generate and apply migration
 
 ## Step 1: Shared schemas
 
@@ -59,11 +59,11 @@ export {
 
 ## Step 2: Drizzle table
 
-Create `apps/backend/src/modules/tags/tags.table.ts`:
+Create `apps/backend/src/modules/tags/infrastructure/tags.table.ts`:
 
 ```ts
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
-import { usersTable } from '../auth/auth.table';
+import { usersTable } from '../../auth/infrastructure/auth.table';
 
 export const tagsTable = sqliteTable('tags', {
   id: text('id').primaryKey(),
@@ -83,16 +83,16 @@ export const tagsTable = sqliteTable('tags', {
 Add the table to `apps/backend/src/infrastructure/db/schema.ts`:
 
 ```ts
-export { usersTable } from '../../modules/auth/auth.table';
-export { itemsTable } from '../../modules/items/items.table';
-export { tagsTable } from '../../modules/tags/tags.table';  // ← add this
+export { usersTable } from '../../modules/auth/infrastructure/auth.table';
+export { itemsTable } from '../../modules/items/infrastructure/items.table';
+export { tagsTable } from '../../modules/tags/infrastructure/tags.table';  // ← add this
 ```
 
 This is necessary for Drizzle's migration generator to discover your table.
 
 ## Step 4: Domain entity
 
-Create `apps/backend/src/modules/tags/tags.domain.ts`:
+Create `apps/backend/src/modules/tags/domain/tag.ts`:
 
 ```ts
 import { type Result, type AppError, ok, err, validationError } from '@repo/shared';
@@ -177,13 +177,13 @@ export class Tag {
 
 ## Step 5: Repository
 
-Create `apps/backend/src/modules/tags/tags.repository.ts`:
+Create `apps/backend/src/modules/tags/infrastructure/tags.repository.ts`:
 
 ```ts
 import { eq, and } from 'drizzle-orm';
-import type { DB } from '../../infrastructure/db/client';
+import type { DB } from '../../../infrastructure/db/client';
 import { tagsTable } from './tags.table';
-import { Tag } from './tags.domain';
+import { Tag } from '../domain/tag';
 
 export interface TagsRepository {
   findById(id: string, userId: string): Promise<Tag | null>;
@@ -246,75 +246,67 @@ export function createTagsRepository(db: DB): TagsRepository {
 }
 ```
 
-**Pattern:** The repository interface uses domain types (`Tag`), not raw DB rows. This keeps the service layer decoupled from Drizzle. The factory function receives the `db` instance — same manual DI pattern used everywhere.
+**Pattern:** The repository interface uses domain types (`Tag`), not raw DB rows. This keeps the use-cases decoupled from Drizzle. The factory function receives the `db` instance — same manual DI pattern used everywhere.
 
-## Step 6: Service
+## Step 6: Use-cases
 
-Create `apps/backend/src/modules/tags/tags.service.ts`:
+Create one file per operation in `apps/backend/src/modules/tags/use-cases/`. Each use-case is a **type alias for the function signature** plus a **factory function** that receives the repository.
+
+### `create-tag.ts`
 
 ```ts
 import {
   type Result, type AppError, type TagResponse,
-  type CreateTagInput, type UpdateTagInput,
-  ok, err, notFoundError,
+  type CreateTagInput, ok,
 } from '@repo/shared';
-import { Tag } from './tags.domain';
-import type { TagsRepository } from './tags.repository';
+import { Tag } from '../domain/tag';
+import type { TagsRepository } from '../infrastructure/tags.repository';
 
-export interface TagsService {
-  create(input: CreateTagInput, userId: string): Promise<Result<TagResponse, AppError>>;
-  getById(id: string, userId: string): Promise<Result<TagResponse, AppError>>;
-  list(userId: string): Promise<Result<TagResponse[], AppError>>;
-  update(id: string, input: UpdateTagInput, userId: string): Promise<Result<TagResponse, AppError>>;
-  delete(id: string, userId: string): Promise<Result<void, AppError>>;
-}
+export type CreateTag = (
+  input: CreateTagInput,
+  userId: string,
+) => Promise<Result<TagResponse, AppError>>;
 
-export function createTagsService(repository: TagsRepository): TagsService {
-  async function getTagOrFail(id: string, userId: string): Promise<Result<Tag, AppError>> {
-    const tag = await repository.findById(id, userId);
-    if (!tag) return err(notFoundError(`Tag with id '${id}' not found`));
-    return ok(tag);
-  }
+export function createCreateTag(repository: TagsRepository): CreateTag {
+  return async (input, userId) => {
+    const result = Tag.create(input.name, input.color ?? '#6b7280', userId);
+    if (!result.ok) return result;
 
-  return {
-    async create(input, userId) {
-      const result = Tag.create(input.name, input.color ?? '#6b7280', userId);
-      if (!result.ok) return result;
-
-      await repository.create(result.value);
-      return ok(result.value.toResponse());
-    },
-
-    async getById(id, userId) {
-      const result = await getTagOrFail(id, userId);
-      if (!result.ok) return result;
-      return ok(result.value.toResponse());
-    },
-
-    async list(userId) {
-      const tags = await repository.findAllByUser(userId);
-      return ok(tags.map((t) => t.toResponse()));
-    },
-
-    async update(id, input, userId) {
-      const result = await getTagOrFail(id, userId);
-      if (!result.ok) return result;
-
-      const updateResult = result.value.updateDetails(input.name, input.color);
-      if (!updateResult.ok) return updateResult;
-
-      await repository.update(updateResult.value);
-      return ok(updateResult.value.toResponse());
-    },
-
-    async delete(id, userId) {
-      const deleted = await repository.delete(id, userId);
-      if (!deleted) return err(notFoundError(`Tag with id '${id}' not found`));
-      return ok(undefined);
-    },
+    await repository.create(result.value);
+    return ok(result.value.toResponse());
   };
 }
 ```
+
+### `get-tag.ts`
+
+```ts
+import {
+  type Result, type AppError, type TagResponse,
+  ok, err, notFoundError,
+} from '@repo/shared';
+import type { TagsRepository } from '../infrastructure/tags.repository';
+
+export type GetTag = (
+  id: string,
+  userId: string,
+) => Promise<Result<TagResponse, AppError>>;
+
+export function createGetTag(repository: TagsRepository): GetTag {
+  return async (id, userId) => {
+    const tag = await repository.findById(id, userId);
+    if (!tag) return err(notFoundError(`Tag with id '${id}' not found`));
+    return ok(tag.toResponse());
+  };
+}
+```
+
+Follow the same pattern for `list-tags.ts`, `update-tag.ts`, `delete-tag.ts`.
+
+**Key pattern:**
+- Each file exports a **type** (the function signature) and a **factory** (creates the function with injected dependencies).
+- The use-case function is a plain async function, not a method on an object.
+- Domain logic stays in the entity; the use-case orchestrates repository calls and entity methods.
 
 ## Step 7: API routes
 
@@ -326,20 +318,29 @@ import { createTagInputSchema, updateTagInputSchema, type JwtPayload } from '@re
 import { db } from '../../infrastructure/db/client';
 import { jwtGuard } from '../../middleware/jwt';
 import { errorToStatus } from '../../middleware/error-handler';
-import { createTagsRepository } from './tags.repository';
-import { createTagsService } from './tags.service';
+import { createTagsRepository } from './infrastructure/tags.repository';
+import { createCreateTag } from './use-cases/create-tag';
+import { createGetTag } from './use-cases/get-tag';
+import { createListTags } from './use-cases/list-tags';
+import { createUpdateTag } from './use-cases/update-tag';
+import { createDeleteTag } from './use-cases/delete-tag';
 
 type Env = { Variables: { jwtPayload: JwtPayload } };
 
 const tags = new Hono<Env>();
 tags.use('*', jwtGuard);
 
+// Wire use-cases
 const repository = createTagsRepository(db);
-const service = createTagsService(repository);
+const createTag = createCreateTag(repository);
+const getTag = createGetTag(repository);
+const listTags = createListTags(repository);
+const updateTag = createUpdateTag(repository);
+const deleteTag = createDeleteTag(repository);
 
 tags.get('/', async (c) => {
   const { userId } = c.get('jwtPayload');
-  const result = await service.list(userId);
+  const result = await listTags(userId);
   if (!result.ok) return c.json(result.error, errorToStatus(result.error.code));
   return c.json(result.value);
 });
@@ -351,7 +352,7 @@ tags.post('/', async (c) => {
   if (!parsed.success) {
     return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message }, 400);
   }
-  const result = await service.create(parsed.data, userId);
+  const result = await createTag(parsed.data, userId);
   if (!result.ok) return c.json(result.error, errorToStatus(result.error.code));
   return c.json(result.value, 201);
 });
@@ -360,6 +361,8 @@ tags.post('/', async (c) => {
 
 export { tags as tagsApi };
 ```
+
+The API file is the **composition root** for the module: it creates the repository, wires use-cases, and maps HTTP to use-case calls.
 
 ## Step 8: Mount in app.ts
 
@@ -374,7 +377,84 @@ app.route('/api/tags', tagsApi);
 
 ## Step 9: Write tests
 
-Create `apps/backend/src/modules/tags/tags.test.ts`. See the [testing guide](./testing.md) for details on how to structure tests with mock repositories.
+Create test files in `apps/backend/src/modules/tags/tests/`:
+
+### `tag.test.ts` — Entity tests
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { isOk, isErr } from '@repo/shared';
+import { Tag } from '../domain/tag';
+
+describe('Tag domain', () => {
+  it('should create a valid tag', () => {
+    const result = Tag.create('Important', '#ff0000', 'user-1');
+    expect(isOk(result)).toBe(true);
+    if (result.ok) {
+      expect(result.value.name).toBe('Important');
+      expect(result.value.color).toBe('#ff0000');
+    }
+  });
+
+  it('should reject empty name', () => {
+    const result = Tag.create('', '#ff0000', 'user-1');
+    expect(isErr(result)).toBe(true);
+    if (!result.ok) {
+      expect(result.error.code).toBe('VALIDATION_ERROR');
+    }
+  });
+});
+```
+
+### `create-tag.test.ts` — Use-case test
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { isOk, isErr } from '@repo/shared';
+import { Tag } from '../domain/tag';
+import type { TagsRepository } from '../infrastructure/tags.repository';
+import { createCreateTag } from '../use-cases/create-tag';
+
+function createMockRepository(): TagsRepository {
+  const store = new Map<string, Tag>();
+  return {
+    async findById(id, userId) {
+      const tag = store.get(id);
+      if (!tag || tag.userId !== userId) return null;
+      return tag;
+    },
+    async findAllByUser(userId) {
+      return [...store.values()].filter((t) => t.userId === userId);
+    },
+    async create(tag) { store.set(tag.id, tag); },
+    async update(tag) { store.set(tag.id, tag); },
+    async delete(id, userId) {
+      const tag = store.get(id);
+      if (!tag || tag.userId !== userId) return false;
+      store.delete(id);
+      return true;
+    },
+  };
+}
+
+describe('CreateTag', () => {
+  it('should create a tag successfully', async () => {
+    const createTag = createCreateTag(createMockRepository());
+    const result = await createTag({ name: 'Bug', color: '#ff0000' }, 'user-1');
+    expect(isOk(result)).toBe(true);
+  });
+
+  it('should fail with empty name', async () => {
+    const createTag = createCreateTag(createMockRepository());
+    const result = await createTag({ name: '', color: '#ff0000' }, 'user-1');
+    expect(isErr(result)).toBe(true);
+  });
+});
+```
+
+Create similar test files for each use-case: `get-tag.test.ts`, `list-tags.test.ts`, `update-tag.test.ts`, `delete-tag.test.ts`.
+
+**Pattern:** Each test file creates a fresh mock repository and tests only the behavior of that specific use-case. The mock repository is a `Map`-based in-memory implementation of the interface.
 
 ## Step 10: Generate and apply migration
 
@@ -383,16 +463,41 @@ bun run --filter backend db:generate   # Generates a SQL migration file from sch
 bun run --filter backend db:migrate    # Applies pending migrations to the local database
 ```
 
+## Final directory structure
+
+```
+modules/tags/
+├── domain/
+│   └── tag.ts                      # Entity class
+├── infrastructure/
+│   ├── tags.table.ts               # Drizzle table definition
+│   └── tags.repository.ts          # Interface + factory
+├── use-cases/
+│   ├── create-tag.ts               # One factory function per operation
+│   ├── get-tag.ts
+│   ├── list-tags.ts
+│   ├── update-tag.ts
+│   └── delete-tag.ts
+├── tests/
+│   ├── tag.test.ts                 # Entity tests
+│   ├── create-tag.test.ts          # One test file per use-case
+│   ├── get-tag.test.ts
+│   ├── list-tags.test.ts
+│   ├── update-tag.test.ts
+│   └── delete-tag.test.ts
+└── tags.api.ts                     # Hono sub-app (composition root)
+```
+
 ## Checklist
 
 - [ ] Zod schemas in `packages/shared/src/schemas/`
 - [ ] Schemas exported from `packages/shared/src/index.ts`
-- [ ] Drizzle table in `modules/[feature]/[feature].table.ts`
+- [ ] Drizzle table in `modules/[feature]/infrastructure/[feature].table.ts`
 - [ ] Table exported from `infrastructure/db/schema.ts`
-- [ ] Domain entity with `create()`, `fromPersistence()`, `toResponse()`
-- [ ] Repository interface + factory function
-- [ ] Service interface + factory function (returns `Result<T, AppError>`)
-- [ ] Hono sub-app with Zod validation and JWT guard
+- [ ] Domain entity in `modules/[feature]/domain/` with `create()`, `fromPersistence()`, `toResponse()`
+- [ ] Repository interface + factory in `modules/[feature]/infrastructure/`
+- [ ] Use-cases in `modules/[feature]/use-cases/` (one file per operation, returns `Result<T, AppError>`)
+- [ ] Hono sub-app in `modules/[feature]/[feature].api.ts` wiring use-cases
 - [ ] Route mounted in `app.ts`
-- [ ] Tests for domain + service layers
+- [ ] Tests in `modules/[feature]/tests/` (entity + one per use-case)
 - [ ] Migration generated and applied (`db:generate` + `db:migrate`)

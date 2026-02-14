@@ -3,13 +3,15 @@ import { loginInputSchema, registerInputSchema } from '@repo/shared';
 import { db } from '../../infrastructure/db/client';
 import { env } from '../../config/env';
 import { errorToStatus } from '../../middleware/error-handler';
-import { createAuthRepository } from './auth.repository';
-import { createAuthService } from './auth.service';
+import { createAuthRepository } from './infrastructure/auth.repository';
+import { createRegister } from './use-cases/register';
+import { createLogin } from './use-cases/login';
 
 const auth = new Hono();
 
 const repository = createAuthRepository(db);
-const service = createAuthService(repository, env.JWT_SECRET);
+const register = createRegister(repository, env.JWT_SECRET);
+const login = createLogin(repository, env.JWT_SECRET);
 
 auth.post('/register', async (c) => {
   const body = await c.req.json();
@@ -21,7 +23,7 @@ auth.post('/register', async (c) => {
     );
   }
 
-  const result = await service.register(parsed.data);
+  const result = await register(parsed.data);
   if (!result.ok) {
     return c.json(result.error, errorToStatus(result.error.code));
   }
@@ -38,7 +40,7 @@ auth.post('/login', async (c) => {
     );
   }
 
-  const result = await service.login(parsed.data);
+  const result = await login(parsed.data);
   if (!result.ok) {
     return c.json(result.error, errorToStatus(result.error.code));
   }

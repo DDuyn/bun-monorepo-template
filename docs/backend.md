@@ -1,8 +1,8 @@
 # Backend Architecture
 
-## Pattern: Vertical Slices with DDD Lite
+## Pattern: Vertical Slices with Use-Cases
 
-The backend is organized by **feature modules**, not by technical layers. Instead of grouping all controllers together, all services together, etc., each feature lives in its own folder with everything it needs.
+The backend is organized by **feature modules**, not by technical layers. Each feature lives in its own folder with subdirectories for domain, infrastructure, use-cases, and tests.
 
 ```
 apps/backend/src/
@@ -18,37 +18,71 @@ apps/backend/src/
 │   └── jwt.ts                    # JWT verification guard
 ├── modules/
 │   ├── auth/
-│   │   ├── auth.table.ts         # Drizzle table definition
-│   │   ├── auth.domain.ts        # User entity (rich domain model)
-│   │   ├── auth.repository.ts    # Data access interface + implementation
-│   │   ├── auth.service.ts       # Business logic (returns Result<T, E>)
-│   │   ├── auth.api.ts           # Hono sub-app (routes)
-│   │   └── auth.test.ts          # Unit tests
+│   │   ├── domain/
+│   │   │   └── user.ts           # User entity (rich domain model)
+│   │   ├── infrastructure/
+│   │   │   ├── auth.table.ts     # Drizzle table definition
+│   │   │   └── auth.repository.ts # Data access interface + implementation
+│   │   ├── use-cases/
+│   │   │   ├── register.ts       # Registration use-case
+│   │   │   └── login.ts          # Login use-case
+│   │   ├── tests/
+│   │   │   ├── user.test.ts      # Entity tests
+│   │   │   ├── register.test.ts  # Use-case tests
+│   │   │   └── login.test.ts
+│   │   └── auth.api.ts           # Hono sub-app (composition root)
 │   ├── items/
-│   │   ├── items.table.ts
-│   │   ├── items.domain.ts
-│   │   ├── items.repository.ts
-│   │   ├── items.service.ts
-│   │   ├── items.api.ts
-│   │   └── items.test.ts
+│   │   ├── domain/
+│   │   │   └── item.ts
+│   │   ├── infrastructure/
+│   │   │   ├── items.table.ts
+│   │   │   └── items.repository.ts
+│   │   ├── use-cases/
+│   │   │   ├── create-item.ts
+│   │   │   ├── get-item.ts
+│   │   │   ├── list-items.ts
+│   │   │   ├── update-item.ts
+│   │   │   ├── activate-item.ts
+│   │   │   ├── deactivate-item.ts
+│   │   │   └── delete-item.ts
+│   │   ├── tests/
+│   │   │   ├── item.test.ts
+│   │   │   ├── create-item.test.ts
+│   │   │   ├── get-item.test.ts
+│   │   │   ├── list-items.test.ts
+│   │   │   ├── update-item.test.ts
+│   │   │   ├── activate-item.test.ts
+│   │   │   ├── deactivate-item.test.ts
+│   │   │   └── delete-item.test.ts
+│   │   └── items.api.ts
 │   └── health/
 │       └── health.api.ts         # Simple health check (no layers needed)
 ├── app.ts                        # Hono app factory, middleware, route mounting
 └── index.ts                      # Entry point (starts Bun server)
 ```
 
-## File conventions
+## Module structure
 
-Every feature module follows the same naming pattern: `[feature].layer.ts`
+Every feature module follows the same subdirectory pattern:
 
-| File | Responsibility | Returns |
+```
+modules/[feature]/
+├── domain/                       # Entity classes with behavior
+├── infrastructure/               # Table definitions + repository
+├── use-cases/                    # One file per operation
+├── tests/                        # One test file per entity/use-case
+└── [feature].api.ts              # Hono sub-app (composition root)
+```
+
+| Directory/File | Responsibility | Returns |
 |------|---------------|---------|
-| `[feature].table.ts` | Drizzle table definition (schema) | `sqliteTable(...)` |
-| `[feature].domain.ts` | Entity class with behavior and invariants | `Result<Entity, AppError>` from factory methods |
-| `[feature].repository.ts` | Interface + factory function for data access | Promises of domain entities |
-| `[feature].service.ts` | Interface + factory function for business logic | `Promise<Result<T, AppError>>` |
-| `[feature].api.ts` | Hono sub-app with route handlers | Hono responses |
-| `[feature].test.ts` | Tests for domain + service layers | — |
+| `domain/[entity].ts` | Entity class with behavior and invariants | `Result<Entity, AppError>` from factory methods |
+| `infrastructure/[feature].table.ts` | Drizzle table definition (schema) | `sqliteTable(...)` |
+| `infrastructure/[feature].repository.ts` | Interface + factory function for data access | Promises of domain entities |
+| `use-cases/[operation].ts` | Factory function for a single business operation | `Promise<Result<T, AppError>>` |
+| `[feature].api.ts` | Hono sub-app with route handlers, wires use-cases | Hono responses |
+| `tests/[entity].test.ts` | Tests for the domain entity | — |
+| `tests/[operation].test.ts` | Tests for a specific use-case | — |
 
 Not every module needs all layers. The `health` module only has `health.api.ts` because it has no business logic, no data, and no domain.
 
@@ -62,7 +96,7 @@ Not every module needs all layers. The `health` module only has `health.api.ts` 
 
 ## Rich domain models (DDD Lite)
 
-Entities are classes with behavior, not plain data bags. The `Item` class (`items.domain.ts:26`) is a good example:
+Entities are classes with behavior, not plain data bags. The `Item` class (`domain/item.ts`) is a good example:
 
 ```ts
 export class Item {
@@ -93,12 +127,41 @@ export class Item {
 ```
 
 **Why rich over anemic:**
-- Invariants (e.g., "name can't be empty", "can't activate an already active item") live in the entity, not scattered across services.
+- Invariants (e.g., "name can't be empty", "can't activate an already active item") live in the entity, not scattered across use-cases.
 - State transitions (`activate`, `deactivate`) are explicit methods with guards, not arbitrary field mutations.
 - `create()` is a static factory that validates and returns `Result`, so you can never have an invalid entity.
 - `fromPersistence()` bypasses validation for data already in the database.
 
 **When to use classes vs. pure functions:** Use classes when the entity has invariants or state transitions. For simple transformations or value objects with no behavior, a plain function or type is fine.
+
+## Use-case pattern
+
+Each use-case is a single function created by a factory. The factory receives dependencies (typically the repository):
+
+```ts
+// use-cases/create-item.ts
+export type CreateItem = (
+  input: CreateItemInput,
+  userId: string,
+) => Promise<Result<ItemResponse, AppError>>;
+
+export function createCreateItem(repository: ItemsRepository): CreateItem {
+  return async (input, userId) => {
+    const result = Item.create(input.name, input.description ?? '', userId);
+    if (!result.ok) return result;
+
+    const item = result.value;
+    await repository.create(item);
+    return ok(item.toResponse());
+  };
+}
+```
+
+**Why use-cases over a service object:**
+- Each operation is independently testable and importable.
+- Adding a new operation doesn't modify existing files.
+- The function signature (type alias) serves as a clear contract.
+- No large service interface that grows unboundedly.
 
 ## Request flow
 
@@ -118,13 +181,13 @@ HTTP Request
 │  [feature].api.ts                    │
 │  1. Parse/validate input (Zod)       │
 │  2. Extract JWT payload if needed    │
-│  3. Call service method              │
+│  3. Call use-case function           │
 │  4. Map Result → HTTP response       │
 └─────────────┬───────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────┐
-│  [feature].service.ts                │
+│  use-cases/[operation].ts            │
 │  1. Orchestrate business logic       │
 │  2. Call repository for data         │
 │  3. Use domain entity methods        │
@@ -133,7 +196,7 @@ HTTP Request
               │
               ▼
 ┌─────────────────────────────────────┐
-│  [feature].repository.ts             │
+│  infrastructure/[feature].repository │
 │  1. Query/insert via Drizzle         │
 │  2. Map DB rows → domain entities    │
 │  3. Return entities or null          │
@@ -141,7 +204,7 @@ HTTP Request
               │
               ▼
 ┌─────────────────────────────────────┐
-│  [feature].domain.ts                 │
+│  domain/[entity].ts                  │
 │  Entity classes with behavior        │
 │  Validates invariants                │
 │  Enforces state transitions          │
@@ -150,10 +213,10 @@ HTTP Request
 
 ### Concrete example: `POST /api/items`
 
-1. **api layer** (`items.api.ts:38`): Parses body with `createItemInputSchema.safeParse()`. If invalid, returns 400. Extracts `userId` from JWT payload. Calls `service.create()`.
-2. **service layer** (`items.service.ts:30`): Calls `Item.create()` to build a valid entity. If validation fails, the Result error propagates. Calls `repository.create()` to persist. Returns `ok(item.toResponse())`.
-3. **repository layer** (`items.repository.ts:30`): Inserts a row into the `items` table via Drizzle.
-4. **domain layer** (`items.domain.ts:38`): `Item.create()` validates name length, description length, sets initial status to `inactive`, generates UUID, returns the entity wrapped in `Result`.
+1. **api layer** (`items.api.ts`): Parses body with `createItemInputSchema.safeParse()`. If invalid, returns 400. Extracts `userId` from JWT payload. Calls the `createItem` use-case.
+2. **use-case** (`use-cases/create-item.ts`): Calls `Item.create()` to build a valid entity. If validation fails, the Result error propagates. Calls `repository.create()` to persist. Returns `ok(item.toResponse())`.
+3. **repository layer** (`infrastructure/items.repository.ts`): Inserts a row into the `items` table via Drizzle.
+4. **domain layer** (`domain/item.ts`): `Item.create()` validates name length, description length, sets initial status to `inactive`, generates UUID, returns the entity wrapped in `Result`.
 
 ## Hono sub-apps and mounting
 
@@ -181,12 +244,12 @@ This means the JWT middleware only runs for routes under `/api/items`, while `/a
 Dependencies are passed as function parameters (manual DI), not via a container:
 
 ```ts
-// Factory function — dependencies are parameters
-export function createItemsService(repository: ItemsRepository): ItemsService { ... }
-
-// Wiring in the API file
+// Wiring in the API file (composition root)
 const repository = createItemsRepository(db);
-const service = createItemsService(repository);
+const createItem = createCreateItem(repository);
+const getItem = createGetItem(repository);
+const listItems = createListItems(repository);
+// ... each use-case gets the repository injected
 ```
 
 **Why manual DI over a container:**
@@ -198,7 +261,7 @@ The wiring happens at the module boundary (`[feature].api.ts`), which acts as th
 
 ## Environment configuration
 
-Environment variables are validated at startup with Zod (`config/env.ts:3`):
+Environment variables are validated at startup with Zod (`config/env.ts`):
 
 ```ts
 const envSchema = z.object({

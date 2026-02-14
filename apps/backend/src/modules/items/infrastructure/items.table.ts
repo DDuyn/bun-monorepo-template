@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
-import { usersTable } from '../auth/auth.table';
+import { usersTable } from '../../auth/infrastructure/auth.table';
 
 export const itemsTable = sqliteTable('items', {
   id: text('id').primaryKey(),

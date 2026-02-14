@@ -1,2 +1,2 @@
-export { usersTable } from '../../modules/auth/auth.table';
-export { itemsTable } from '../../modules/items/items.table';
+export { usersTable } from '../../modules/auth/infrastructure/auth.table';
+export { itemsTable } from '../../modules/items/infrastructure/items.table';

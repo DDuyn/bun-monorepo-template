@@ -2,15 +2,15 @@
 
 ## Strategy
 
-We test **domain entities** and **services**. We don't test API routes directly (those are thin wrappers over services), and we don't test repositories (those are thin wrappers over Drizzle). The goal is to test business logic and invariants, not framework plumbing.
+We test **domain entities** and **use-cases**. We don't test API routes directly (those are thin wrappers over use-cases), and we don't test repositories (those are thin wrappers over Drizzle). The goal is to test business logic and invariants, not framework plumbing.
 
 ```
 What we test:
   ✓ Domain entities — invariants, state transitions, validation
-  ✓ Services — business logic, error handling, orchestration
+  ✓ Use-cases — business logic, error handling, orchestration
 
 What we skip:
-  ✗ API routes — just Zod parsing + service call + response mapping
+  ✗ API routes — just Zod parsing + use-case call + response mapping
   ✗ Repositories — just Drizzle queries, tested implicitly through integration
   ✗ Middleware — tested through real requests in development
 ```
@@ -32,14 +32,14 @@ Bun's test runner discovers files matching `*.test.ts` automatically.
 3. Refactor if needed, keeping tests green
 4. Repeat
 
-Since services receive repositories as parameters (manual DI), you can write and test business logic before the database or API layer even exists.
+Since use-cases receive repositories as parameters (manual DI), you can write and test business logic before the database or API layer even exists.
 
 ## Mock repositories
 
 The key testing technique is **mock repositories**. Instead of hitting a real database, we create in-memory implementations of the repository interface using a `Map`:
 
 ```ts
-// From items.test.ts
+// From tests/create-item.test.ts
 function createMockRepository(): ItemsRepository {
   const store = new Map<string, Item>();
 
@@ -70,7 +70,7 @@ function createMockRepository(): ItemsRepository {
 }
 ```
 
-**Why this works:** The service depends on the `ItemsRepository` interface, not on the Drizzle implementation. The mock fulfills the same contract. Tests run instantly with no database setup.
+**Why this works:** The use-case depends on the `ItemsRepository` interface, not on the Drizzle implementation. The mock fulfills the same contract. Tests run instantly with no database setup.
 
 **Why this is better than mocking libraries:** The mock is explicit, readable, and behaves like a real data store (including things like "delete returns false if not found"). You can see all the behavior in one place instead of configuring stubs.
 
@@ -82,7 +82,7 @@ Domain tests verify that:
 - State transitions enforce rules
 - `toResponse()` produces the expected shape
 
-Example from `items.test.ts`:
+Example from `tests/item.test.ts`:
 
 ```ts
 describe('Item domain', () => {
@@ -117,52 +117,46 @@ describe('Item domain', () => {
 
 **Pattern:** Call the factory/method, then assert on the `Result`. Use `isOk()`/`isErr()` to check success/failure, then narrow with `if (result.ok)` before accessing `.value` or `.error`.
 
-## Testing services
+## Testing use-cases
 
-Service tests verify:
+Use-case tests verify:
 - Happy paths (create, read, update, delete)
 - Error paths (not found, duplicate, invalid input)
-- Business rules (user isolation, state transitions through the service)
+- Business rules (user isolation, state transitions)
 - Pagination behavior
 
-Example from `items.test.ts`:
+Example from `tests/create-item.test.ts`:
 
 ```ts
-describe('ItemsService', () => {
-  it('should create and retrieve an item', async () => {
-    const service = createItemsService(createMockRepository());
+describe('CreateItem', () => {
+  it('should create an item successfully', async () => {
+    const createItem = createCreateItem(createMockRepository());
 
-    const createResult = await service.create({ name: 'My Item', description: 'desc' }, USER_ID);
-    expect(isOk(createResult)).toBe(true);
-    if (!createResult.ok) return;
-
-    const getResult = await service.getById(createResult.value.id, USER_ID);
-    expect(isOk(getResult)).toBe(true);
-    if (getResult.ok) {
-      expect(getResult.value.name).toBe('My Item');
+    const result = await createItem({ name: 'My Item', description: 'desc' }, USER_ID);
+    expect(isOk(result)).toBe(true);
+    if (result.ok) {
+      expect(result.value.name).toBe('My Item');
+      expect(result.value.status).toBe('inactive');
     }
   });
 
-  it('should not access items from another user', async () => {
-    const service = createItemsService(createMockRepository());
+  it('should fail with empty name', async () => {
+    const createItem = createCreateItem(createMockRepository());
 
-    const createResult = await service.create({ name: 'Private', description: '' }, USER_ID);
-    if (!createResult.ok) return;
-
-    const result = await service.getById(createResult.value.id, 'other-user');
+    const result = await createItem({ name: '', description: 'desc' }, USER_ID);
     expect(isErr(result)).toBe(true);
     if (!result.ok) {
-      expect(result.error.code).toBe('NOT_FOUND');
+      expect(result.error.code).toBe('VALIDATION_ERROR');
     }
   });
 });
 ```
 
-**Pattern:** Create a fresh service with a fresh mock repository for each test (or use `beforeEach`). This ensures tests are isolated — no shared state between them.
+**Pattern:** Create a fresh use-case function with a fresh mock repository for each test. This ensures tests are isolated — no shared state between them.
 
 ## Testing auth
 
-The auth service tests use a slightly different mock because the repository interface is different (keyed by email):
+The auth use-case tests use a slightly different mock because the repository interface is different (keyed by email):
 
 ```ts
 function createMockRepository(users: User[] = []): AuthRepository {
@@ -183,9 +177,9 @@ You can also pre-populate the mock with existing users to test scenarios like "e
 it('should fail if email already exists', async () => {
   const existingUser = User.fromPersistence({ /* ... */ });
   const repo = createMockRepository([existingUser]);
-  const service = createAuthService(repo, JWT_SECRET);
+  const register = createRegister(repo);
 
-  const result = await service.register({ email: 'test@example.com', /* ... */ });
+  const result = await register({ email: 'test@example.com', /* ... */ });
   expect(isErr(result)).toBe(true);
   if (!result.ok) {
     expect(result.error.code).toBe('CONFLICT');
@@ -193,18 +187,26 @@ it('should fail if email already exists', async () => {
 });
 ```
 
-## File naming
+## File organization
 
-Test files live next to the code they test:
+Tests live in a `tests/` subdirectory within each module, with one file per entity and one file per use-case:
 
 ```
 modules/items/
-├── items.domain.ts
-├── items.service.ts
-├── items.test.ts      ← tests for both domain and service
+├── domain/
+│   └── item.ts
+├── use-cases/
+│   ├── create-item.ts
+│   ├── get-item.ts
+│   └── ...
+└── tests/
+    ├── item.test.ts              ← entity tests
+    ├── create-item.test.ts       ← one test file per use-case
+    ├── get-item.test.ts
+    └── ...
 ```
 
-You could split into `items.domain.test.ts` and `items.service.test.ts` if a module grows large enough to warrant it.
+This keeps test files focused and easy to navigate. When you modify `create-item.ts`, the corresponding test is `tests/create-item.test.ts`.
 
 ## What makes a good test
 

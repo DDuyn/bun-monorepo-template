@@ -96,7 +96,7 @@ await editFile(
 await editFile(
   resolve(BACKEND, 'src/infrastructure/db/schema.ts'),
   [
-    ["export { itemsTable } from '../../modules/items/items.table';\n", ''],
+    ["export { itemsTable } from '../../modules/items/infrastructure/items.table';\n", ''],
   ],
   'Removed itemsTable from infrastructure/db/schema.ts',
 );

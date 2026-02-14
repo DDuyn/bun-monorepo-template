@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import type { DB } from '../../infrastructure/db/client';
+import type { DB } from '../../../infrastructure/db/client';
 import { usersTable } from './auth.table';
-import { User } from './auth.domain';
+import { User } from '../domain/user';
 
 export interface AuthRepository {
   findByEmail(email: string): Promise<User | null>;

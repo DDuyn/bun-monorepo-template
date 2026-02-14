@@ -1,11 +1,15 @@
 import { eq, and, count } from 'drizzle-orm';
-import type { DB } from '../../infrastructure/db/client';
+import type { DB } from '../../../infrastructure/db/client';
 import { itemsTable } from './items.table';
-import { Item } from './items.domain';
+import { Item } from '../domain/item';
 
 export interface ItemsRepository {
   findById(id: string, userId: string): Promise<Item | null>;
-  findAllByUser(userId: string, page: number, limit: number): Promise<{ items: Item[]; total: number }>;
+  findAllByUser(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<{ items: Item[]; total: number }>;
   create(item: Item): Promise<void>;
   update(item: Item): Promise<void>;
   delete(id: string, userId: string): Promise<boolean>;
