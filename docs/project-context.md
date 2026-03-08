@@ -63,9 +63,29 @@ bun-monorepo-template/
 │   │   └── drizzle.config.ts
 │   └── frontend/                 # SPA con SolidJS
 │       ├── src/
+│       │   ├── domain/           # Capa de dominio (validaciones + API + servicio por feature)
+│       │   │   ├── validation.ts            # FieldErrors, ValidationResult, zodIssuesToFieldErrors
+│       │   │   ├── auth/
+│       │   │   │   ├── auth.validations.ts  # Validaciones con Zod → ValidationResult<T>
+│       │   │   │   ├── auth.api.ts          # Endpoints de auth
+│       │   │   │   └── auth.service.ts      # Orquesta validación + API → AuthServiceResult<T>
+│       │   │   └── item/
+│       │   │       ├── item.validations.ts  # Validaciones con Zod → ValidationResult<T>
+│       │   │       ├── item.api.ts          # Endpoints de items
+│       │   │       └── item.service.ts      # Orquesta validación + API → ItemServiceResult<T>
+│       │   ├── pages/            # Capa de vista + controlador por página
+│       │   │   ├── login/
+│       │   │   │   ├── Login.tsx            # Vista pura (solo JSX)
+│       │   │   │   └── login.ctrl.ts        # Controlador (signals + handlers)
+│       │   │   └── home/
+│       │   │       ├── Home.tsx             # Vista pura (solo JSX)
+│       │   │       └── home.ctrl.ts         # Controlador (signals + handlers)
 │       │   ├── components/       # Layout, componentes compartidos
-│       │   ├── pages/            # Home, Login
-│       │   ├── lib/api.ts        # Cliente fetch tipado con gestión de token
+│       │   │   ├── Layout.tsx
+│       │   │   └── ui/           # Componentes reutilizables (Input, Button, ...)
+│       │   │       ├── Input.tsx
+│       │   │       └── Button.tsx
+│       │   ├── lib/api-client.ts # Transporte HTTP genérico + token utils
 │       │   └── index.tsx         # Entry point, rutas
 │       └── public/_redirects     # SPA routing para Cloudflare Pages
 ├── packages/
@@ -174,11 +194,182 @@ El wiring se hace en el archivo `[feature].api.ts`, que actúa como composition 
 
 ## Arquitectura del frontend
 
-- **SolidJS** con signals (`createSignal`) y renderizado condicional (`<Show>`, `<For>`)
-- **@solidjs/router** para rutas del lado del cliente
-- **Cliente fetch tipado** (`lib/api.ts`) que añade automáticamente el token JWT de `localStorage`
-- **Guard de auth** en `onMount`: si no hay token, redirige a `/login`
+### 3 capas: Vista – Controlador – Dominio (Service)
+
+Inspirado en la filosofía de SpoonKit: la vista es agnóstica a la lógica, el controlador conecta vista con dominio, y el dominio contiene validaciones, llamadas a API y reglas de negocio.
+
+```
+Vista (.tsx) --> Controlador (.ctrl.ts) --> Service (.service.ts) --> Validations + API
+                                                                        └── api-client.ts
+```
+
+El controlador NO conoce ni las validaciones ni la API directamente. Solo habla con el servicio del dominio.
+
+#### Capa 1: Dominio (`domain/[feature]/`)
+
+Cada feature tiene su carpeta con tres archivos, más un archivo compartido `domain/validation.ts`:
+
+- **`domain/validation.ts`** — Tipos frontend-only para errores por campo. `AppError` de `@repo/shared` permanece sin cambios.
+  - `FieldErrors = Record<string, string>` — Mapa campo → mensaje de error
+  - `ValidationResult<T>` — `{ ok: true; value: T } | { ok: false; fieldErrors: FieldErrors }`
+  - `zodIssuesToFieldErrors(issues)` — Mapea `ZodIssue[]` a `FieldErrors` usando `issue.path[0]` como clave
+- **`[feature].validations.ts`** — Funciones de validación puras que usan los schemas Zod de `@repo/shared` y retornan `ValidationResult<T>`. No dependen de SolidJS ni de la API.
+- **`[feature].api.ts`** — Definición de endpoints HTTP del feature. Usa `request<T>()` de `lib/api-client.ts`.
+- **`[feature].service.ts`** — Orquesta validación + llamada API. Retorna un `ServiceResult<T>` que es una unión de tres casos:
+  - `{ ok: true; value: T }` — Éxito
+  - `{ ok: false; fieldErrors: FieldErrors }` — Validación fallida (errores por campo)
+  - `{ ok: false; error: AppError }` — Error de API o red
+
+```ts
+// domain/auth/auth.service.ts
+export type AuthServiceResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; fieldErrors: FieldErrors }
+  | { ok: false; error: AppError };
+
+export async function login(email: string, password: string): Promise<AuthServiceResult<AuthResponse>> {
+  const validation = validateLoginInput(email, password);
+  if (!validation.ok) return validation; // { ok: false, fieldErrors: { email: "...", ... } }
+  try {
+    const response = await authApi.login(validation.value);
+    return ok(response);
+  } catch (error) {
+    return { ok: false, error: internalError(error.message) };
+  }
+}
+```
+
+#### Capa 2: Controlador (`pages/[feature]/[feature].ctrl.ts`)
+
+Factory function que retorna un objeto con un store (estado reactivo) y handlers. Conoce SolidJS (usa `createStore`) pero NO genera JSX. Solo importa del servicio del dominio.
+
+El store distingue entre errores por campo (`errors`) y errores generales de API (`generalError`):
+
+```ts
+// pages/login/login.ctrl.ts
+export function createLoginCtrl(navigate: Navigator) {
+  const [state, setState] = createStore({
+    email: '', password: '', name: '',
+    isRegister: false,
+    errors: {} as FieldErrors,   // { email: "Invalid email", password: "Too short" }
+    generalError: '',             // "Network error" / "Unauthorized"
+    loading: false,
+  });
+
+  async function handleSubmit(e: Event) {
+    e.preventDefault();
+    setState({ errors: {}, generalError: '', loading: true });
+    const result = state.isRegister
+      ? await register(state.email, state.password, state.name)
+      : await login(state.email, state.password);
+    if (!result.ok) {
+      if ('fieldErrors' in result) setState({ errors: result.fieldErrors, loading: false });
+      else setState({ generalError: result.error.message, loading: false });
+      return;
+    }
+    setToken(result.value.token);
+    navigate('/');
+  }
+
+  return { state, setState, handleSubmit, toggleMode };
+}
+```
+
+#### Capa 3: Vista (`pages/[feature]/[Feature].tsx`)
+
+Solo JSX. Recibe del controlador datos reactivos y handlers. Sin lógica de negocio ni validaciones. Accede al estado como propiedades del objeto (`ctrl.state.email`, sin paréntesis):
+
+```tsx
+// pages/login/Login.tsx
+export default function Login() {
+  const navigate = useNavigate();
+  const ctrl = createLoginCtrl(navigate);
+
+  return (
+    <form onSubmit={ctrl.handleSubmit}>
+      <input value={ctrl.state.email} onInput={(e) => ctrl.setState('email', e.currentTarget.value)} />
+      {/* ... solo renderizado */}
+    </form>
+  );
+}
+```
+
+#### Estado reactivo: `createStore` por defecto
+
+Se usa `createStore` de `solid-js/store` en lugar de múltiples `createSignal`. Ventajas:
+
+- **Menos verboso**: un solo store en vez de N pairs `[value, setValue]`
+- **Acceso directo**: `state.email` en vez de `email()` — más natural para devs de backend
+- **Actualizaciones en bloque**: `setState({ error: '', loading: true })` en una sola llamada
+- **Reactividad granular en arrays**: si se actualiza un item individual, SolidJS solo re-renderiza ese elemento, no toda la lista
+
+Para componentes con 1-2 valores simples (ej: un toggle de modal), `createSignal` sigue siendo válido.
+
+#### Componentes reutilizables: `components/ui/`
+
+Componentes de UI reutilizables para evitar repetir estilos de Tailwind en cada vista:
+
+- **`Input`** — Input con label opcional, estilo soft (fondo gris claro, borde sutil, bordes redondeados). Props: `label?`, `value`, `onInput`, `type?`, `placeholder?`, `error?`, `class?`
+  - Si se pasa `error`, el campo se muestra en rojo y hay un texto de error inline debajo del campo
+- **`Button`** — Botón con variantes (`primary`, `danger`, `ghost`). Usa colores del tema (`bg-primary`, `text-danger`). Props: `children`, `onClick?`, `type?`, `variant?`, `disabled?`, `class?`
+
+```tsx
+// Ejemplo de uso con errores inline
+<Input label="Email" type="email" value={ctrl.state.email}
+  onInput={(v) => ctrl.setState('email', v)}
+  error={ctrl.state.errors.email} />
+<Button type="submit" disabled={ctrl.state.loading}>Sign in</Button>
+<Button variant="danger" onClick={handleDelete}>Delete</Button>
+```
+
+**Patrón**: cuando un patrón de UI se repite 3+ veces en las vistas, se extrae a `components/ui/`. Los componentes son wrappers ligeros sobre HTML + Tailwind, no abstracciones complejas. Siempre aceptan `class` para extensión puntual.
+
+#### Tema visual y CSS
+
+- **Tailwind v4** con directiva `@theme` en `index.css` para definir custom properties
+- **Work Sans** como fuente principal (cargada desde Google Fonts en `index.html`)
+- Colores del tema disponibles como clases de Tailwind:
+  - `bg-primary` / `hover:bg-primary-hover` / `bg-primary-light` — Indigo (#4f46e5)
+  - `text-danger` / `hover:text-danger-hover` / `bg-danger-light` — Rojo (#ef4444)
+
+```css
+/* index.css */
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-light: #e0e7ff;
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+  --color-danger-light: #fef2f2;
+}
+```
+
+#### Infraestructura: `lib/api-client.ts`
+
+Cliente HTTP genérico reutilizable por todos los dominios:
+
+- `request<T>(path, options)` — Fetch genérico con JSON, Bearer token automático, manejo de errores
+- `setToken(token)` / `clearToken()` / `isAuthenticated()` — Gestión de JWT en `localStorage`
 - **`VITE_API_URL`** como variable de entorno para la URL base de la API
+
+### Patrón para añadir una nueva feature
+
+1. Crear `domain/[feature]/[feature].validations.ts` con funciones que retornen `ValidationResult<T>`
+2. Crear `domain/[feature]/[feature].api.ts` con los endpoints
+3. Crear `domain/[feature]/[feature].service.ts` que orquesta validación + API, retornando `ServiceResult<T>`
+4. Crear `pages/[feature]/[feature].ctrl.ts` con el controlador (factory function + createStore con `errors: FieldErrors` y `generalError: string`)
+5. Crear `pages/[feature]/[Feature].tsx` con la vista pura — pasar `error={ctrl.state.errors.field}` a cada `<Input>`, mostrar `generalError` en un banner
+6. Añadir la ruta en `index.tsx`
+
+### Otras características
+
+- **SolidJS** con `createStore` para estado y renderizado condicional (`<Show>`, `<For>`)
+- **@solidjs/router** para rutas del lado del cliente
+- **Guard de auth** en `onMount` del controlador: si no hay token, redirige a `/login`
+- **Validación client-side con Zod** usando los mismos schemas de `@repo/shared` (validación antes de llamar a la API, encapsulada en el servicio)
 
 ---
 
