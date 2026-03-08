@@ -1,9 +1,10 @@
 # Adding a Feature Module
 
-This guide walks through adding a new backend feature module from scratch. We'll use a hypothetical `tags` module as the example — a simple entity with a name and color that belongs to a user.
+This guide walks through adding a full-stack feature module from scratch. We'll use a hypothetical `tags` module as the example — a simple entity with a name and color that belongs to a user.
 
 ## Overview of steps
 
+**Backend**
 1. Define Zod schemas in `@repo/shared`
 2. Create the Drizzle table
 3. Export the table from the schema barrel
@@ -14,6 +15,12 @@ This guide walks through adding a new backend feature module from scratch. We'll
 8. Mount the route in `app.ts`
 9. Write tests (one file per use-case + one for the entity)
 10. Generate and apply migration
+
+**Frontend**
+11. Create the domain layer (API client + validations + service)
+12. Create the controller
+13. Create the view
+14. Add the route
 
 ## Step 1: Shared schemas
 
@@ -463,33 +470,274 @@ bun run --filter backend db:generate   # Generates a SQL migration file from sch
 bun run --filter backend db:migrate    # Applies pending migrations to the local database
 ```
 
+---
+
+## Step 11: Domain layer (frontend)
+
+Create three files under `apps/frontend/src/domain/tags/`.
+
+### `tags.api.ts` — raw fetch calls
+
+```ts
+import { request } from '../../lib/api-client';
+import type { TagResponse, CreateTagInput } from '@repo/shared';
+
+export const tagsApi = {
+  list: () => request<TagResponse[]>('/tags'),
+  create: (data: CreateTagInput) =>
+    request<TagResponse>('/tags', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/tags/${id}`, { method: 'DELETE' }),
+};
+```
+
+### `tags.validations.ts` — client-side Zod validation
+
+```ts
+import { createTagInputSchema } from '@repo/shared';
+import { zodIssuesToFieldErrors, type ValidationResult } from '../validation';
+import type { CreateTagInput } from '@repo/shared';
+
+export function validateCreateTagInput(
+  name: string,
+  color: string,
+): ValidationResult<CreateTagInput> {
+  const result = createTagInputSchema.safeParse({ name, color });
+  if (!result.success) {
+    return { ok: false, fieldErrors: zodIssuesToFieldErrors(result.error.issues) };
+  }
+  return { ok: true, value: result.data };
+}
+```
+
+### `tags.service.ts` — orchestrates validation + API
+
+```ts
+import { type TagResponse, type AppError, ok, internalError } from '@repo/shared';
+import { type FieldErrors } from '../validation';
+import { validateCreateTagInput } from './tags.validations';
+import { tagsApi } from './tags.api';
+
+export type TagServiceResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; fieldErrors: FieldErrors }
+  | { ok: false; error: AppError };
+
+export async function listTags(): Promise<
+  { ok: true; value: TagResponse[] } | { ok: false; error: AppError }
+> {
+  try {
+    return ok(await tagsApi.list());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Something went wrong';
+    return { ok: false, error: internalError(message) };
+  }
+}
+
+export async function createTag(
+  name: string,
+  color: string,
+): Promise<TagServiceResult<TagResponse>> {
+  const validation = validateCreateTagInput(name, color);
+  if (!validation.ok) return validation;
+
+  try {
+    return ok(await tagsApi.create(validation.value));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Something went wrong';
+    return { ok: false, error: internalError(message) };
+  }
+}
+```
+
+**Pattern:** The service is the only layer that calls both validation and API. Controllers never call `tagsApi` directly.
+
+## Step 12: Controller (frontend)
+
+Create `apps/frontend/src/pages/tags/tags.ctrl.ts`:
+
+```ts
+import { createStore } from 'solid-js/store';
+import type { Navigator } from '@solidjs/router';
+import { clearToken, isAuthenticated } from '../../lib/api-client';
+import { listTags, createTag } from '../../domain/tags/tags.service';
+import type { TagResponse } from '@repo/shared';
+import type { FieldErrors } from '../../domain/validation';
+
+export function createTagsCtrl(navigate: Navigator) {
+  const [state, setState] = createStore({
+    tags: [] as TagResponse[],
+    newName: '',
+    newColor: '#6b7280',
+    loading: true,
+    errors: {} as FieldErrors,
+    generalError: '',
+  });
+
+  async function init() {
+    if (!isAuthenticated()) {
+      navigate('/login', { replace: true });
+      return;
+    }
+    await loadTags();
+  }
+
+  async function loadTags() {
+    setState('loading', true);
+    const result = await listTags();
+    if (!result.ok) {
+      clearToken();
+      navigate('/login', { replace: true });
+      return;
+    }
+    setState({ tags: result.value, loading: false });
+  }
+
+  async function handleCreate(e: Event) {
+    e.preventDefault();
+    setState({ errors: {}, generalError: '' });
+
+    const result = await createTag(state.newName, state.newColor);
+    if (!result.ok) {
+      if ('fieldErrors' in result) {
+        setState({ errors: result.fieldErrors });
+      } else {
+        setState({ generalError: result.error.message });
+      }
+      return;
+    }
+    setState('newName', '');
+    await loadTags();
+  }
+
+  function handleLogout() {
+    clearToken();
+    navigate('/login', { replace: true });
+  }
+
+  return { state, setState, init, handleCreate, handleLogout };
+}
+```
+
+**Key points:**
+- `createStore` for all page state — access without parentheses (`state.tags`, not `tags()`)
+- `errors: {} as FieldErrors` — per-field validation errors populated by the service
+- `generalError: ''` — for API/server errors that don't map to a specific field
+- Always clear both at the start of a new submission
+- Controllers never import from `*.api.ts` directly — only from `*.service.ts`
+
+## Step 13: View (frontend)
+
+Create `apps/frontend/src/pages/tags/Tags.tsx`:
+
+```tsx
+import { onMount, For, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
+import { createTagsCtrl } from './tags.ctrl';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+
+export default function Tags() {
+  const navigate = useNavigate();
+  const ctrl = createTagsCtrl(navigate);
+
+  onMount(() => ctrl.init());
+
+  return (
+    <>
+      <div class="flex items-center justify-between mb-8">
+        <h1 class="text-2xl font-semibold text-gray-900">Tags</h1>
+        <Button variant="ghost" onClick={ctrl.handleLogout}>Sign out</Button>
+      </div>
+
+      {ctrl.state.generalError && (
+        <div class="bg-danger-light text-danger text-sm rounded-lg px-4 py-3 mb-5">
+          {ctrl.state.generalError}
+        </div>
+      )}
+
+      <form onSubmit={ctrl.handleCreate} noValidate class="flex gap-3 mb-6">
+        <Input
+          value={ctrl.state.newName}
+          onInput={(v) => ctrl.setState('newName', v)}
+          placeholder="Tag name..."
+          error={ctrl.state.errors.name}
+          class="flex-1"
+        />
+        <Button type="submit">Add</Button>
+      </form>
+
+      <Show when={!ctrl.state.loading} fallback={<p class="text-gray-400 text-sm">Loading...</p>}>
+        <Show when={ctrl.state.tags.length > 0} fallback={<p class="text-gray-400 text-sm">No tags yet.</p>}>
+          <ul class="space-y-2">
+            <For each={ctrl.state.tags}>
+              {(tag) => (
+                <li class="flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-4 py-3">
+                  <span class="w-3 h-3 rounded-full shrink-0" style={{ background: tag.color }} />
+                  <span class="text-sm font-medium text-gray-900">{tag.name}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+      </Show>
+    </>
+  );
+}
+```
+
+**Key points:**
+- `noValidate` on the form — prevents the browser's native validation tooltip from appearing
+- The view only reads `ctrl.state.*` and calls `ctrl.handle*` functions — no logic of its own
+- `error={ctrl.state.errors.name}` — passes the per-field error directly to `<Input>`
+
+## Step 14: Add the route
+
+In `apps/frontend/src/index.tsx`, import the new page and add a `<Route>`:
+
+```tsx
+import Tags from './pages/tags/Tags';
+
+// Inside the <Router>:
+<Route path="/tags" component={Tags} />
+```
+
 ## Final directory structure
 
 ```
-modules/tags/
+modules/tags/                             # Backend
 ├── domain/
-│   └── tag.ts                      # Entity class
+│   └── tag.ts                           # Entity class
 ├── infrastructure/
-│   ├── tags.table.ts               # Drizzle table definition
-│   └── tags.repository.ts          # Interface + factory
+│   ├── tags.table.ts                    # Drizzle table definition
+│   └── tags.repository.ts               # Interface + factory
 ├── use-cases/
-│   ├── create-tag.ts               # One factory function per operation
+│   ├── create-tag.ts                    # One factory function per operation
 │   ├── get-tag.ts
 │   ├── list-tags.ts
 │   ├── update-tag.ts
 │   └── delete-tag.ts
 ├── tests/
-│   ├── tag.test.ts                 # Entity tests
-│   ├── create-tag.test.ts          # One test file per use-case
+│   ├── tag.test.ts                      # Entity tests
+│   ├── create-tag.test.ts               # One test file per use-case
 │   ├── get-tag.test.ts
 │   ├── list-tags.test.ts
 │   ├── update-tag.test.ts
 │   └── delete-tag.test.ts
-└── tags.api.ts                     # Hono sub-app (composition root)
+└── tags.api.ts                          # Hono sub-app (composition root)
+
+domain/tags/                             # Frontend
+├── tags.api.ts                          # Raw fetch calls
+├── tags.validations.ts                  # Client-side Zod validation
+└── tags.service.ts                      # Orchestrates validation + API
+
+pages/tags/                              # Frontend
+├── tags.ctrl.ts                         # Controller (state + handlers)
+└── Tags.tsx                             # View (renders ctrl state)
 ```
 
 ## Checklist
 
+**Backend**
 - [ ] Zod schemas in `packages/shared/src/schemas/`
 - [ ] Schemas exported from `packages/shared/src/index.ts`
 - [ ] Drizzle table in `modules/[feature]/infrastructure/[feature].table.ts`
@@ -501,3 +749,11 @@ modules/tags/
 - [ ] Route mounted in `app.ts`
 - [ ] Tests in `modules/[feature]/tests/` (entity + one per use-case)
 - [ ] Migration generated and applied (`db:generate` + `db:migrate`)
+
+**Frontend**
+- [ ] Domain API file in `domain/[feature]/[feature].api.ts` using `request()`
+- [ ] Validations file in `domain/[feature]/[feature].validations.ts` returning `ValidationResult<T>`
+- [ ] Service file in `domain/[feature]/[feature].service.ts` returning tagged union result
+- [ ] Controller in `pages/[feature]/[feature].ctrl.ts` with `createStore`, `errors`, `generalError`
+- [ ] View in `pages/[feature]/[feature].tsx` with `noValidate`, per-field `error` props
+- [ ] Route added in `src/index.tsx`

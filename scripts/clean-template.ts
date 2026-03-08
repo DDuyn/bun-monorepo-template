@@ -14,8 +14,8 @@
  *   3. Removes itemsTable export from infrastructure/db/schema.ts
  *   4. Deletes packages/shared/src/schemas/item.schema.ts
  *   5. Removes item schema exports from packages/shared/src/index.ts
- *   6. Removes api.items from apps/frontend/src/lib/api.ts
- *   7. Replaces Home.tsx with a minimal authenticated landing page
+ *   6. Deletes apps/frontend/src/domain/item/ (API, service, validations)
+ *   7. Replaces Home page with a minimal authenticated landing (controller + view)
  *   8. Deletes the old local.db and migrations (you regenerate after cleanup)
  */
 
@@ -128,67 +128,68 @@ await editFile(
   'Removed item exports from packages/shared/src/index.ts',
 );
 
-// 6. Remove api.items from frontend api client
-await editFile(
-  resolve(FRONTEND, 'src/lib/api.ts'),
-  [
-    [
-      `  items: {
-    list: (page = 1, limit = 20) =>
-      request<{ items: unknown[]; total: number; page: number; limit: number }>(
-        \`/items?page=\${page}&limit=\${limit}\`,
-      ),
-    get: (id: string) => request(\`/items/\${id}\`),
-    create: (data: { name: string; description?: string }) =>
-      request('/items', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: { name?: string; description?: string }) =>
-      request(\`/items/\${id}\`, { method: 'PATCH', body: JSON.stringify(data) }),
-    activate: (id: string) =>
-      request(\`/items/\${id}/activate\`, { method: 'POST' }),
-    deactivate: (id: string) =>
-      request(\`/items/\${id}/deactivate\`, { method: 'POST' }),
-    delete: (id: string) =>
-      request(\`/items/\${id}\`, { method: 'DELETE' }),
-  },`,
-      '',
-    ],
-  ],
-  'Removed api.items from frontend api client',
+// 6. Delete item domain folder (API, service, validations)
+removeDir(
+  resolve(FRONTEND, 'src/domain/item'),
+  'Deleted apps/frontend/src/domain/item/',
 );
 
-// 7. Replace Home.tsx with minimal landing page
+// 7. Replace Home page with minimal authenticated landing
 await writeFile(
-  resolve(FRONTEND, 'src/pages/Home.tsx'),
-  `import { onMount } from 'solid-js';
-import { useNavigate } from '@solidjs/router';
-import { clearToken, isAuthenticated } from '../lib/api';
+  resolve(FRONTEND, 'src/pages/home/home.ctrl.ts'),
+  `import { createStore } from 'solid-js/store';
+import type { Navigator } from '@solidjs/router';
+import { clearToken, isAuthenticated } from '../../lib/api-client';
 
-export default function Home() {
-  const navigate = useNavigate();
+export function createHomeCtrl(navigate: Navigator) {
+  const [state, setState] = createStore({
+    loading: true,
+  });
 
-  onMount(() => {
+  async function init() {
     if (!isAuthenticated()) {
       navigate('/login', { replace: true });
+      return;
     }
-  });
+    setState('loading', false);
+  }
 
   function handleLogout() {
     clearToken();
     navigate('/login', { replace: true });
   }
 
+  return { state, setState, init, handleLogout };
+}
+`,
+  'Replaced home.ctrl.ts with minimal controller',
+);
+
+await writeFile(
+  resolve(FRONTEND, 'src/pages/home/Home.tsx'),
+  `import { onMount } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
+import { createHomeCtrl } from './home.ctrl';
+import { Button } from '../../components/ui/Button';
+
+export default function Home() {
+  const navigate = useNavigate();
+  const ctrl = createHomeCtrl(navigate);
+
+  onMount(() => ctrl.init());
+
   return (
     <>
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Home</h1>
-        <button
-          onClick={handleLogout}
-          class="text-sm text-gray-500 hover:text-gray-700"
-        >
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-2xl font-semibold text-gray-900">Home</h1>
+          <p class="text-sm text-gray-500 mt-0.5">Start building your app</p>
+        </div>
+        <Button variant="ghost" onClick={ctrl.handleLogout}>
           Sign out
-        </button>
+        </Button>
       </div>
-      <p class="text-gray-600">Welcome! Start building your app.</p>
+      <p class="text-gray-600 text-sm">Welcome! Add your features here.</p>
     </>
   );
 }

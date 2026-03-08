@@ -72,19 +72,25 @@ The backend follows a **vertical slice / feature modules** pattern with **DDD Li
 ```
 modules/
 └── [feature]/
-    ├── [feature].api.ts          # Hono sub-app (routes)
-    ├── [feature].service.ts      # Business logic, returns Result<T, E>
-    ├── [feature].repository.ts   # Data access (Drizzle)
-    ├── [feature].domain.ts       # Entities with behavior (rich domain)
-    ├── [feature].table.ts        # Drizzle table definition
-    └── [feature].test.ts         # Unit tests (TDD)
+    ├── domain/
+    │   └── [feature].ts          # Entity with behavior and invariants
+    ├── infrastructure/
+    │   ├── [feature].table.ts    # Drizzle table definition
+    │   └── [feature].repository.ts  # Interface + factory (data access)
+    ├── use-cases/
+    │   ├── create-[feature].ts   # One factory function per operation
+    │   └── ...
+    ├── tests/
+    │   ├── [feature].test.ts     # Entity tests
+    │   └── create-[feature].test.ts  # One test file per use-case
+    └── [feature].api.ts          # Hono sub-app (composition root)
 ```
 
 ### Key patterns
 
-- **Result pattern**: Services return `Result<T, AppError>` instead of throwing. See `packages/shared/src/result.ts`.
+- **Result pattern**: Use-cases return `Result<T, AppError>` instead of throwing. See `packages/shared/src/result.ts`.
 - **Rich domain**: Entities have behavior and enforce invariants. No anemic models.
-- **Manual DI**: Services receive dependencies as constructor parameters. Easy to test with mocks.
+- **Manual DI**: Use-cases receive the repository as a parameter. Easy to test with mocks.
 - **Zod validation**: Input validated at the API layer with shared schemas from `@repo/shared`.
 
 ### API endpoints

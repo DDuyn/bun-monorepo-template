@@ -56,7 +56,7 @@ The `@repo/shared` package has zero dependencies on either app. It only depends 
 |---------|----------|---------|
 | `@repo/shared` | Result type, AppError, Zod schemas, TypeScript interfaces | `Result<T, E>`, `loginInputSchema`, `JwtPayload` |
 | `apps/backend` | API routes, services, repositories, domain entities, DB config | `auth.service.ts`, `items.domain.ts`, Drizzle tables |
-| `apps/frontend` | UI components, pages, API client, routing | `Home.tsx`, `Login.tsx`, `api.ts` |
+| `apps/frontend` | UI components, pages, controllers, domain services, routing | `pages/home/`, `domain/auth/`, `lib/api-client.ts` |
 
 ## Why this structure
 
