@@ -16,7 +16,8 @@
  *   5. Removes item schema exports from packages/shared/src/index.ts
  *   6. Deletes apps/frontend/src/domain/item/ (API, service, validations)
  *   7. Replaces Home page with a minimal authenticated landing (controller + view)
- *   8. Deletes the old local.db and migrations (you regenerate after cleanup)
+ *   8. Removes Items nav entry and BoxIcon from AppLayout.tsx
+ *   9. Deletes the old local.db and migrations (you regenerate after cleanup)
  */
 
 import { rmSync, existsSync } from 'node:fs';
@@ -139,7 +140,7 @@ await writeFile(
   resolve(FRONTEND, 'src/pages/home/home.ctrl.ts'),
   `import { createStore } from 'solid-js/store';
 import type { Navigator } from '@solidjs/router';
-import { clearToken, isAuthenticated } from '../../lib/api-client';
+import { isAuthenticated } from '../../lib/api-client';
 
 export function createHomeCtrl(navigate: Navigator) {
   const [state, setState] = createStore({
@@ -154,12 +155,7 @@ export function createHomeCtrl(navigate: Navigator) {
     setState('loading', false);
   }
 
-  function handleLogout() {
-    clearToken();
-    navigate('/login', { replace: true });
-  }
-
-  return { state, setState, init, handleLogout };
+  return { state, setState, init };
 }
 `,
   'Replaced home.ctrl.ts with minimal controller',
@@ -170,7 +166,6 @@ await writeFile(
   `import { onMount } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { createHomeCtrl } from './home.ctrl';
-import { Button } from '../../components/ui/Button';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -180,14 +175,9 @@ export default function Home() {
 
   return (
     <>
-      <div class="flex items-center justify-between mb-8">
-        <div>
-          <h1 class="text-2xl font-semibold text-gray-900">Home</h1>
-          <p class="text-sm text-gray-500 mt-0.5">Start building your app</p>
-        </div>
-        <Button variant="ghost" onClick={ctrl.handleLogout}>
-          Sign out
-        </Button>
+      <div class="mb-8">
+        <h1 class="text-2xl font-semibold text-gray-900">Home</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Start building your app</p>
       </div>
       <p class="text-gray-600 text-sm">Welcome! Add your features here.</p>
     </>
@@ -197,7 +187,28 @@ export default function Home() {
   'Replaced Home.tsx with minimal landing page',
 );
 
-// 8. Delete old database and migrations
+// 8. Remove Items nav entry and BoxIcon from AppLayout.tsx
+await editFile(
+  resolve(FRONTEND, 'src/components/AppLayout.tsx'),
+  [
+    [
+      `function BoxIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class} fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+    </svg>
+  );
+}
+
+`,
+      '',
+    ],
+    [`  { label: 'Items', href: '/items', icon: BoxIcon },\n`, ''],
+  ],
+  'Removed Items nav entry and BoxIcon from AppLayout.tsx',
+);
+
+// 9. Delete old database and migrations
 removeFile(
   resolve(BACKEND, 'local.db'),
   'Deleted local.db',
