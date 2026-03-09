@@ -1,9 +1,7 @@
 import type { ParentProps } from 'solid-js';
-import { A } from '@solidjs/router';
 import { Navbar } from './Navbar';
 import { Sidebar, type NavItem } from './Sidebar';
 
-// Icon helpers — inline SVGs como componentes mínimos
 function HomeIcon(props: { class?: string }) {
   return (
     <svg class={props.class} fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -12,17 +10,17 @@ function HomeIcon(props: { class?: string }) {
   );
 }
 
-function BoxIcon(props: { class?: string }) {
+function ProfileIcon(props: { class?: string }) {
   return (
     <svg class={props.class} fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
     </svg>
   );
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Home', href: '/', icon: HomeIcon },
-  { label: 'Items', href: '/items', icon: BoxIcon },
+  { label: 'Profile', href: '/profile', icon: ProfileIcon },
 ];
 
 export function AppLayout(props: ParentProps) {

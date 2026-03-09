@@ -1,10 +1,10 @@
-import { createSignal, For } from 'solid-js';
+import { createSignal, For, type JSX } from 'solid-js';
 import { A } from '@solidjs/router';
 
 export interface NavItem {
   label: string;
   href: string;
-  icon: (props: { class?: string }) => ReturnType<typeof A>;
+  icon: (props: { class?: string }) => JSX.Element;
 }
 
 interface SidebarProps {
