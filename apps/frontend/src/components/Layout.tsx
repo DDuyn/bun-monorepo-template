@@ -1,4 +1,4 @@
-import { onMount } from 'solid-js';
+import { Show, onMount } from 'solid-js';
 import { useLocation } from '@solidjs/router';
 import type { RouteSectionProps } from '@solidjs/router';
 import { AppLayout } from './AppLayout';
@@ -14,9 +14,12 @@ export default function Layout(props: RouteSectionProps) {
     }
   });
 
-  if (location.pathname === '/login') {
-    return <>{props.children}</>;
-  }
-
-  return <AppLayout>{props.children}</AppLayout>;
+  return (
+    <Show
+      when={location.pathname !== '/login'}
+      fallback={<>{props.children}</>}
+    >
+      <AppLayout>{props.children}</AppLayout>
+    </Show>
+  );
 }
