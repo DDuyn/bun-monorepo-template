@@ -1,11 +1,13 @@
 import { useNavigate } from '@solidjs/router';
 import { createLoginCtrl } from './login.ctrl';
+import { useAuth } from '../../context/auth.context';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 
 export default function Login() {
   const navigate = useNavigate();
-  const ctrl = createLoginCtrl(navigate);
+  const auth = useAuth();
+  const ctrl = createLoginCtrl(navigate, auth.loadUser);
 
   return (
     <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">

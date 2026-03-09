@@ -4,7 +4,7 @@ import { setToken } from '../../lib/api-client';
 import { login, register } from '../../domain/auth/auth.service';
 import type { FieldErrors } from '../../domain/validation';
 
-export function createLoginCtrl(navigate: Navigator) {
+export function createLoginCtrl(navigate: Navigator, loadUser: () => Promise<void>) {
   const [state, setState] = createStore({
     email: '',
     password: '',
@@ -37,6 +37,7 @@ export function createLoginCtrl(navigate: Navigator) {
     }
 
     setToken(result.value.token);
+    await loadUser();
     setState('loading', false);
     navigate('/', { replace: true });
   }

@@ -69,10 +69,5 @@ export function createHomeCtrl(navigate: Navigator) {
     await loadItems();
   }
 
-  function handleLogout() {
-    clearToken();
-    navigate('/login', { replace: true });
-  }
-
-  return { state, setState, init, handleCreate, handleToggle, handleDelete, handleLogout };
+  return { state, setState, init, handleCreate, handleToggle, handleDelete };
 }

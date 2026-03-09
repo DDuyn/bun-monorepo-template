@@ -12,14 +12,9 @@ export default function Home() {
 
   return (
     <>
-      <div class="flex items-center justify-between mb-8">
-        <div>
-          <h1 class="text-2xl font-semibold text-gray-900">Items</h1>
-          <p class="text-sm text-gray-500 mt-0.5">Manage your items below</p>
-        </div>
-        <Button variant="ghost" onClick={ctrl.handleLogout}>
-          Sign out
-        </Button>
+      <div class="mb-8">
+        <h1 class="text-2xl font-semibold text-gray-900">Items</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Manage your items below</p>
       </div>
 
       {ctrl.state.generalError && (

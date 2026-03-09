@@ -1,7 +1,9 @@
 import { type AuthResponse, type AppError, ok, internalError } from '@repo/shared';
 import { type FieldErrors } from '../validation';
 import { validateLoginInput, validateRegisterInput } from './auth.validations';
-import { authApi } from './auth.api';
+import { authApi, type UserProfile } from './auth.api';
+
+export type { UserProfile };
 
 export type AuthServiceResult<T> =
   | { ok: true; value: T }
@@ -34,6 +36,18 @@ export async function register(
 
   try {
     const response = await authApi.register(validation.value);
+    return ok(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Something went wrong';
+    return { ok: false, error: internalError(message) };
+  }
+}
+
+export async function fetchMe(): Promise<
+  { ok: true; value: UserProfile } | { ok: false; error: AppError }
+> {
+  try {
+    const response = await authApi.me();
     return ok(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Something went wrong';

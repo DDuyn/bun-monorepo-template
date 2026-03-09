@@ -1,6 +1,8 @@
 import { request } from '../../lib/api-client';
 import type { AuthResponse, LoginInput, RegisterInput } from '@repo/shared';
 
+export type UserProfile = AuthResponse['user'];
+
 export const authApi = {
   login: (data: LoginInput) =>
     request<AuthResponse>('/auth/login', {
@@ -12,4 +14,5 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  me: () => request<UserProfile>('/auth/me'),
 };
