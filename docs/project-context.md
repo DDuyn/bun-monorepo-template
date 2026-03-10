@@ -43,7 +43,7 @@ bun-monorepo-template/
 │   │   ├── src/
 │   │   │   ├── config/env.ts     # Variables de entorno validadas con Zod
 │   │   │   ├── infrastructure/db/ # Cliente Drizzle, schema barrel, migraciones
-│   │   │   ├── middleware/        # error-handler, jwt guard
+│   │   │   ├── middleware/        # error-handler, jwt guard, rate-limit, logger
 │   │   │   ├── modules/          # Feature modules (vertical slices)
 │   │   │   │   ├── auth/         # Registro + login
 │   │   │   │   │   ├── domain/   # User entity
@@ -175,7 +175,7 @@ const createItem = createCreateItem(repository);
 const getItem = createGetItem(repository);
 ```
 
-`AppError` tiene un `code` (`VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `CONFLICT`, `INTERNAL_ERROR`) que se mapea a HTTP status en el middleware.
+`AppError` tiene un `code` (`VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `CONFLICT`, `RATE_LIMITED`, `INTERNAL_ERROR`) que se mapea a HTTP status en el middleware.
 
 ### Inyección de dependencias manual
 
@@ -447,3 +447,208 @@ La action `cloudflare/wrangler-action@v3` detecta Bun e intenta usar `bunx` de f
 ## Script de limpieza
 
 `scripts/clean-template.ts` elimina el módulo de ejemplo `items` cuando se bootstrappea un proyecto nuevo desde el template. Limpia archivos, imports en `app.ts`, exports en `schema.ts`, schemas en `@repo/shared`, y la migración baseline.
+
+---
+
+## Rate Limiting
+
+Implementado en `apps/backend/src/middleware/rate-limit.ts` como sliding window en memoria, keyed por IP (`x-forwarded-for`).
+
+**Endpoints protegidos**: `POST /api/auth/register` y `POST /api/auth/login` (targets clásicos de fuerza bruta).
+
+**Configuración** vía env vars (con defaults razonables):
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `RATE_LIMIT_WINDOW_MS` | `900000` (15 min) | Duración de la ventana en ms |
+| `RATE_LIMIT_MAX` | `10` | Intentos permitidos por ventana por IP |
+
+**Respuesta al superar el límite:**
+```json
+HTTP 429 Too Many Requests
+Retry-After: 847
+{ "code": "RATE_LIMITED", "message": "Too many requests, please try again later." }
+```
+
+**`ErrorCode` en `@repo/shared`**: incluye `RATE_LIMITED` → mapeado a 429 en `STATUS_MAP` del error-handler.
+
+**Cómo añadir rate limiting a otro endpoint:**
+```ts
+import { createRateLimit } from '../../middleware/rate-limit';
+import { env } from '../../config/env';
+
+const myRateLimit = createRateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX,
+});
+
+router.post('/mi-endpoint', myRateLimit, async (c) => { ... });
+```
+
+**Limitación**: el store es in-memory, no se comparte entre instancias. Para múltiples réplicas haría falta Redis u otro store externo.
+
+---
+
+## Logging y Observabilidad
+
+### Logger estructurado (`apps/backend/src/middleware/logger.ts`)
+
+El middleware `structuredLogger` se monta globalmente en `app.ts`. Por cada request HTTP:
+
+1. Genera un `request_id` (UUID v4) e inyecta el header `X-Request-Id` en la respuesta.
+2. Crea un `RequestLogger` contextual ligado a ese `request_id` y lo inyecta en `c.var.log`.
+3. Al terminar la request, logea un evento `request` con `method`, `path`, `status`, `duration_ms`.
+
+**Formato según entorno:**
+
+| Entorno | Formato | Destino |
+|---------|---------|---------|
+| Desarrollo (`NODE_ENV != production`) | Pretty-print colorizado | stdout (consola) |
+| Producción | JSON por línea (NDJSON) | stdout + Betterstack (si token configurado) |
+
+**Campos del log de request:**
+```json
+{
+  "level": "info",
+  "timestamp": "2026-03-10T12:34:56.789Z",
+  "request_id": "a1b2c3d4-...",
+  "event": "request",
+  "method": "POST",
+  "path": "/api/auth/login",
+  "status": 200,
+  "duration_ms": 45
+}
+```
+
+### Application logging (eventos de negocio)
+
+Para logear dentro de use-cases, recibir `log?: RequestLogger` como parámetro opcional. Al ser opcional, los tests existentes no se ven afectados (no pasan logger, y `log?.info()` no falla si `log` es `undefined`).
+
+**Patrón de uso:**
+```ts
+// use-cases/apply-skill.ts
+import type { RequestLogger } from '../../../middleware/logger';
+
+export type ApplySkill = (
+  input: ApplySkillInput,
+  log?: RequestLogger,
+) => Promise<Result<SkillResult, AppError>>;
+
+export function createApplySkill(repository: SkillRepository): ApplySkill {
+  return async (input, log) => {
+    const before = await repository.getStats(input.targetId);
+
+    log?.info('skill_applying', {
+      userId: input.userId,
+      skillId: input.skillId,
+      targetId: input.targetId,
+      atk_before: before.atk,
+    });
+
+    // ... lógica de cálculo ...
+
+    log?.info('skill_applied', {
+      userId: input.userId,
+      skillId: input.skillId,
+      targetId: input.targetId,
+      atk_before: before.atk,
+      atk_after: after.atk,
+      delta: after.atk - before.atk,
+    });
+
+    // Si algo no cuadra:
+    if (after.atk - before.atk !== input.expectedDelta) {
+      log?.warn('skill_unexpected_result', {
+        userId: input.userId,
+        skillId: input.skillId,
+        expected_delta: input.expectedDelta,
+        actual_delta: after.atk - before.atk,
+      });
+    }
+
+    return ok(result);
+  };
+}
+```
+
+**En la API route**, pasar `c.var.log`:
+```ts
+const result = await applySkill(parsed.data, c.var.log);
+```
+
+**Tipado de Hono**: para que `c.var.log` esté tipado en una API route, usar `LoggerEnv`:
+```ts
+import type { LoggerEnv } from '../../middleware/logger';
+
+type Env = { Variables: { jwtPayload: JwtPayload } } & LoggerEnv;
+const router = new Hono<Env>();
+```
+
+**Niveles y cuándo usar cada uno:**
+
+| Método | Cuándo usarlo |
+|--------|--------------|
+| `log?.info(...)` | Resultado esperado de una acción de negocio (registro exitoso, login, habilidad aplicada). Solo en dev por defecto. |
+| `log?.warn(...)` | Resultado inesperado pero manejado (login fallido, conflicto, resultado de cálculo fuera de lo esperado). Enviado a Betterstack por defecto. |
+| `log?.error(...)` | Error no recuperable o excepción capturada en el error-handler. Siempre enviado a Betterstack. |
+
+**Regla de oro:** loguear el _input_ y el _output_ de una acción importante, no cada paso del cálculo interno.
+
+### Control de nivel mínimo (`LOG_LEVEL`)
+
+Solo los eventos con nivel ≥ `LOG_LEVEL` se envían a Betterstack. A stdout (consola local) siempre van todos.
+
+| Variable | Default dev | Default prod | Valores |
+|----------|-------------|--------------|---------|
+| `LOG_LEVEL` | `info` | `warn` | `info` \| `warn` \| `error` |
+
+Para depurar temporalmente en producción sin redesplegar: cambiar `LOG_LEVEL=info` en las env vars del servicio de Render.
+
+---
+
+## Observabilidad con Betterstack (Logtail)
+
+Betterstack recibe los logs vía HTTP push (fire-and-forget). Solo se activa si `BETTERSTACK_SOURCE_TOKEN` está configurado.
+
+**En local**: la variable NO estará definida → los logs solo van a stdout → cero tráfico externo.
+
+**Setup (una vez por proyecto):**
+
+1. Crear cuenta gratuita en [betterstack.com](https://betterstack.com) (free tier: 1 GB/mes, 3 días retención).
+2. Ir a **Telemetry → Sources → Connect source**.
+3. Nombre: nombre del proyecto. Tipo: **HTTP** (o Node.js si prefieren auto-parsing).
+4. Copiar el **Source token**.
+5. En Render (o donde despliegues): añadir variable de entorno `BETTERSTACK_SOURCE_TOKEN=<token>`.
+6. Opcionalmente añadir también a GitHub Secrets si necesitas que CI envíe logs (normalmente no hace falta).
+
+**Variables de entorno para Betterstack:**
+
+| Variable | Requerida | Descripción |
+|----------|-----------|-------------|
+| `BETTERSTACK_SOURCE_TOKEN` | No (pero necesaria para enviar) | Token del source de Betterstack |
+| `BETTERSTACK_HOST` | No | Default: `in.logs.betterstack.com` |
+
+**Cómo buscar una traza de bug:**
+
+Cuando un usuario reporta que "la habilidad X no funcionó":
+
+1. Pedir al usuario la hora aproximada de la acción.
+2. Ir a **Betterstack → Live Tail** o **Explore**.
+3. Filtrar: `userId = "abc123"` + rango de tiempo.
+4. Buscar el evento `skill_applying` → ver `atk_before`.
+5. Buscar el evento `skill_applied` → ver `atk_after` y `delta`.
+6. Si hay un `skill_unexpected_result`, verás exactamente qué esperaba el sistema y qué ocurrió.
+7. Usar el `request_id` para correlacionar todos los logs de esa request específica.
+
+**Búsqueda SQL en Betterstack** (Live Tail usa un SQL-like):
+```sql
+SELECT * FROM logs
+WHERE json_value(message, '$.userId') = 'abc123'
+  AND timestamp > now() - interval '1 hour'
+ORDER BY timestamp DESC
+```
+
+**Comportamiento del buffer:**
+- Los logs se acumulan en memoria y se envían en batch cada 1 segundo, o cuando hay 10+ entradas.
+- Si el proceso termina, se hace un flush final con `beforeExit`.
+- Si el envío a Betterstack falla (red, token inválido), los logs se descartan silenciosamente — la app no se ve afectada.

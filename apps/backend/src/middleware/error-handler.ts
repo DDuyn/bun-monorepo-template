@@ -1,7 +1,6 @@
 import type { ErrorCode } from "@repo/shared";
 import type { Context, Next } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { logError } from "./logger";
 
 const STATUS_MAP: Record<ErrorCode, ContentfulStatusCode> = {
   VALIDATION_ERROR: 400,
@@ -20,8 +19,16 @@ export async function errorHandler(c: Context, next: Next) {
   try {
     await next();
   } catch (error) {
-    const requestId = c.res.headers.get('X-Request-Id') ?? 'unknown';
-    logError(requestId, error);
+    // c.var.log puede no estar disponible si el middleware de logging no se montó
+    const log = c.var.log;
+    if (log) {
+      log.error('unhandled_exception', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    } else {
+      console.error('Unhandled error:', error);
+    }
     return c.json(
       { code: "INTERNAL_ERROR", message: "Internal server error" },
       500,

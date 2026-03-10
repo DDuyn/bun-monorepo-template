@@ -8,23 +8,32 @@ import {
   err,
   unauthorizedError,
 } from '@repo/shared';
+import type { RequestLogger } from '../../../middleware/logger';
 import type { AuthRepository } from '../infrastructure/auth.repository';
 
-export type Login = (input: LoginInput) => Promise<Result<AuthResponse, AppError>>;
+export type Login = (
+  input: LoginInput,
+  log?: RequestLogger,
+) => Promise<Result<AuthResponse, AppError>>;
 
 export function createLogin(repository: AuthRepository, jwtSecret: string): Login {
-  return async (input) => {
+  return async (input, log) => {
     const user = await repository.findByEmail(input.email);
     if (!user) {
+      log?.warn('login_failed', { reason: 'email_not_found' });
       return err(unauthorizedError('Invalid email or password'));
     }
 
     const valid = await Bun.password.verify(input.password, user.passwordHash);
     if (!valid) {
+      log?.warn('login_failed', { reason: 'wrong_password', userId: user.id });
       return err(unauthorizedError('Invalid email or password'));
     }
 
     const token = await sign({ userId: user.id, email: user.email }, jwtSecret);
+
+    log?.info('user_logged_in', { userId: user.id, email: user.email });
+
     return ok({ token, user: user.toResponse() });
   };
 }

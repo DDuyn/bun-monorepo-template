@@ -1,68 +1,160 @@
 import { createMiddleware } from 'hono/factory';
 import { randomUUID } from 'node:crypto';
+import { env } from '../config/env';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// ---- Tipos públicos ----
 
-export interface LogEntry {
-  level: 'info' | 'error' | 'warn';
+export type LogLevel = 'info' | 'warn' | 'error';
+
+export interface AppLogEntry {
+  level: LogLevel;
   timestamp: string;
   request_id: string;
-  method: string;
-  path: string;
-  status: number;
-  duration_ms: number;
+  event: string;
+  [key: string]: unknown;
 }
 
-function write(entry: LogEntry) {
+/**
+ * Logger contextual ligado a un request_id.
+ * Se inyecta en c.var.log desde el middleware y se pasa
+ * como parámetro opcional a los use-cases que necesiten logear
+ * eventos de negocio.
+ *
+ * @example
+ * // En un use-case:
+ * log?.info('skill_applied', { userId, skillId, before: 80, after: 100 })
+ * log?.warn('unexpected_result', { userId, expected: 20, actual: 0 })
+ */
+export interface RequestLogger {
+  info(event: string, data?: Record<string, unknown>): void;
+  warn(event: string, data?: Record<string, unknown>): void;
+  error(event: string, data?: Record<string, unknown>): void;
+  readonly requestId: string;
+}
+
+// ---- Configuración interna ----
+
+const isDev = process.env.NODE_ENV !== 'production';
+const LEVEL_RANK: Record<LogLevel, number> = { info: 0, warn: 1, error: 2 };
+const minLevel = LEVEL_RANK[env.LOG_LEVEL];
+
+// ---- Buffer + flush a Betterstack ----
+
+const buffer: AppLogEntry[] = [];
+let flushTimer: ReturnType<typeof setInterval> | null = null;
+
+if (env.BETTERSTACK_SOURCE_TOKEN) {
+  flushTimer = setInterval(flushBuffer, 1000);
+  if (flushTimer.unref) flushTimer.unref();
+
+  process.on('beforeExit', () => {
+    flushBuffer();
+  });
+}
+
+function flushBuffer() {
+  if (!env.BETTERSTACK_SOURCE_TOKEN || buffer.length === 0) return;
+
+  const entries = buffer.splice(0, buffer.length);
+
+  fetch(`https://${env.BETTERSTACK_HOST}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.BETTERSTACK_SOURCE_TOKEN}`,
+    },
+    body: JSON.stringify(
+      entries.map((e) => ({
+        dt: e.timestamp,
+        level: e.level,
+        request_id: e.request_id,
+        event: e.event,
+        ...Object.fromEntries(
+          Object.entries(e).filter(
+            ([k]) => !['level', 'timestamp', 'request_id', 'event'].includes(k),
+          ),
+        ),
+      })),
+    ),
+  }).catch(() => {
+    // Fire-and-forget: si falla el envío a Betterstack, no rompemos la app
+  });
+}
+
+// ---- Salida a stdout ----
+
+function writeToStdout(entry: AppLogEntry) {
   if (isDev) {
-    const color = entry.status >= 500 ? '\x1b[31m' : entry.status >= 400 ? '\x1b[33m' : '\x1b[32m';
+    const colors: Record<LogLevel, string> = {
+      info: '\x1b[36m',   // cyan
+      warn: '\x1b[33m',   // yellow
+      error: '\x1b[31m',  // red
+    };
     const reset = '\x1b[0m';
-    console.log(
-      `${color}${entry.method} ${entry.path} ${entry.status}${reset} ${entry.duration_ms}ms [${entry.request_id}]`,
-    );
+    const { level, request_id, event, timestamp: _t, ...rest } = entry;
+    const extra = Object.keys(rest).length ? ` ${JSON.stringify(rest)}` : '';
+    console.log(`${colors[level]}[${level.toUpperCase()}]${reset} [${request_id}] ${event}${extra}`);
   } else {
     process.stdout.write(JSON.stringify(entry) + '\n');
   }
 }
 
-export const structuredLogger = createMiddleware(async (c, next) => {
+// ---- Factory del logger contextual ----
+
+export function createRequestLogger(requestId: string): RequestLogger {
+  function log(level: LogLevel, event: string, data?: Record<string, unknown>) {
+    const entry: AppLogEntry = {
+      level,
+      timestamp: new Date().toISOString(),
+      request_id: requestId,
+      event,
+      ...data,
+    };
+
+    writeToStdout(entry);
+
+    // Solo enviar a Betterstack si el nivel supera el umbral configurado
+    if (env.BETTERSTACK_SOURCE_TOKEN && LEVEL_RANK[level] >= minLevel) {
+      buffer.push(entry);
+      if (buffer.length >= 10) flushBuffer();
+    }
+  }
+
+  return {
+    requestId,
+    info: (event, data) => log('info', event, data),
+    warn: (event, data) => log('warn', event, data),
+    error: (event, data) => log('error', event, data),
+  };
+}
+
+// ---- Tipo Hono para c.var.log ----
+
+export type LoggerEnv = {
+  Variables: { log: RequestLogger };
+};
+
+// ---- Middleware de request logging ----
+
+export const structuredLogger = createMiddleware<LoggerEnv>(async (c, next) => {
   const requestId = randomUUID();
   const start = Date.now();
 
   c.header('X-Request-Id', requestId);
 
+  const requestLog = createRequestLogger(requestId);
+  c.set('log', requestLog);
+
   await next();
 
   const duration = Date.now() - start;
   const status = c.res.status;
+  const level: LogLevel = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
 
-  write({
-    level: status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info',
-    timestamp: new Date().toISOString(),
-    request_id: requestId,
+  requestLog[level]('request', {
     method: c.req.method,
     path: c.req.path,
     status,
     duration_ms: duration,
   });
 });
-
-/**
- * Log an unhandled error with structured output.
- * Used by the error-handler middleware.
- */
-export function logError(requestId: string, error: unknown) {
-  if (isDev) {
-    console.error('\x1b[31m[ERROR]\x1b[0m', requestId, error);
-  } else {
-    process.stdout.write(
-      JSON.stringify({
-        level: 'error',
-        timestamp: new Date().toISOString(),
-        request_id: requestId,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      }) + '\n',
-    );
-  }
-}

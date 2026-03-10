@@ -8,15 +8,20 @@ import {
   err,
   conflictError,
 } from '@repo/shared';
+import type { RequestLogger } from '../../../middleware/logger';
 import { User } from '../domain/user';
 import type { AuthRepository } from '../infrastructure/auth.repository';
 
-export type Register = (input: RegisterInput) => Promise<Result<AuthResponse, AppError>>;
+export type Register = (
+  input: RegisterInput,
+  log?: RequestLogger,
+) => Promise<Result<AuthResponse, AppError>>;
 
 export function createRegister(repository: AuthRepository, jwtSecret: string): Register {
-  return async (input) => {
+  return async (input, log) => {
     const existing = await repository.findByEmail(input.email);
     if (existing) {
+      log?.warn('register_conflict', { email: input.email });
       return err(conflictError('A user with this email already exists'));
     }
 
@@ -37,6 +42,9 @@ export function createRegister(repository: AuthRepository, jwtSecret: string): R
     await repository.create(user);
 
     const token = await sign({ userId: user.id, email: user.email }, jwtSecret);
+
+    log?.info('user_registered', { userId: user.id, email: user.email });
+
     return ok({ token, user: user.toResponse() });
   };
 }

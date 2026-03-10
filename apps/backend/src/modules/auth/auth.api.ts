@@ -5,12 +5,13 @@ import { env } from '../../config/env';
 import { jwtGuard } from '../../middleware/jwt';
 import { errorToStatus } from '../../middleware/error-handler';
 import { createRateLimit } from '../../middleware/rate-limit';
+import type { LoggerEnv } from '../../middleware/logger';
 import { createAuthRepository } from './infrastructure/auth.repository';
 import { createRegister } from './use-cases/register';
 import { createLogin } from './use-cases/login';
 import { createGetMe } from './use-cases/get-me';
 
-type Env = { Variables: { jwtPayload: JwtPayload } };
+type Env = { Variables: { jwtPayload: JwtPayload } } & LoggerEnv;
 
 const auth = new Hono<Env>();
 
@@ -34,7 +35,7 @@ auth.post('/register', authRateLimit, async (c) => {
     );
   }
 
-  const result = await register(parsed.data);
+  const result = await register(parsed.data, c.var.log);
   if (!result.ok) {
     return c.json(result.error, errorToStatus(result.error.code));
   }
@@ -51,7 +52,7 @@ auth.post('/login', authRateLimit, async (c) => {
     );
   }
 
-  const result = await login(parsed.data);
+  const result = await login(parsed.data, c.var.log);
   if (!result.ok) {
     return c.json(result.error, errorToStatus(result.error.code));
   }

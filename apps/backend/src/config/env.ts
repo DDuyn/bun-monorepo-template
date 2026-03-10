@@ -28,6 +28,8 @@ await loadDotEnvFromRoot();
 // Absolute path so local.db always lives in apps/backend/ regardless of cwd
 const localDbDefault = `file:${resolve(import.meta.dir, '../../../local.db')}`;
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   TURSO_DATABASE_URL: z.string().default(localDbDefault),
@@ -36,6 +38,13 @@ const envSchema = z.object({
   // Rate limiting: 10 intentos por ventana de 15 minutos (por IP)
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().default(10),
+  // Observabilidad: Betterstack (Logtail) — opcional
+  // Sin token, los logs solo van a stdout (consola local)
+  BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
+  BETTERSTACK_HOST: z.string().default('in.logs.betterstack.com'),
+  // Nivel mínimo de log enviado a Betterstack: 'info' | 'warn' | 'error'
+  // En producción se recomienda 'warn' para evitar ruido. En local suele ser 'info'.
+  LOG_LEVEL: z.enum(['info', 'warn', 'error']).default(isDev ? 'info' : 'warn'),
 });
 
 function loadEnv() {
