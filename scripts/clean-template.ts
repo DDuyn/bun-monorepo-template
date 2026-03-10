@@ -2,22 +2,27 @@
 /**
  * Clean Template Script
  *
- * Removes the example "items" module from the template so you can start fresh
- * with only the auth system and infrastructure in place.
+ * Removes the example "items" module and renames the project so you can
+ * start fresh with only the auth system and infrastructure in place.
  *
  * Usage:
  *   bun run scripts/clean-template.ts
  *
  * What it does:
- *   1. Deletes apps/backend/src/modules/items/ (entire folder)
- *   2. Removes items route from apps/backend/src/app.ts
- *   3. Removes itemsTable export from infrastructure/db/schema.ts
- *   4. Deletes packages/shared/src/schemas/item.schema.ts
- *   5. Removes item schema exports from packages/shared/src/index.ts
- *   6. Deletes apps/frontend/src/domain/item/ (API, service, validations)
- *   7. Replaces Home page with a minimal authenticated landing (controller + view)
- *   8. Removes Items nav entry and BoxIcon from AppLayout.tsx
- *   9. Deletes the old local.db and migrations (you regenerate after cleanup)
+ *   1.  Asks for the new project name (e.g. "my-saas")
+ *   2.  Deletes apps/backend/src/modules/items/ (entire folder)
+ *   3.  Removes items route from apps/backend/src/app.ts
+ *   4.  Removes itemsTable export from infrastructure/db/schema.ts
+ *   5.  Deletes packages/shared/src/schemas/item.schema.ts
+ *   6.  Removes item schema exports from packages/shared/src/index.ts
+ *   7.  Deletes apps/frontend/src/domain/item/ (API, service, validations)
+ *   8.  Deletes apps/frontend/src/pages/items/ (controller + view)
+ *   9.  Removes /items route and import from apps/frontend/src/index.tsx
+ *   10. Removes Items nav entry and BoxIcon from AppLayout.tsx
+ *   11. Replaces Home page with a minimal authenticated landing (controller + view)
+ *   12. Renames the project in all package.json files
+ *   13. Updates the service name in render.yaml
+ *   14. Deletes the old local.db and migrations (you regenerate after cleanup)
  */
 
 import { rmSync, existsSync } from 'node:fs';
@@ -73,17 +78,54 @@ async function writeFile(path: string, content: string, label: string) {
   changes++;
 }
 
-// ─── Start ───────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────
 
-console.log('\nCleaning template — removing example items module...\n');
+function toKebabCase(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
-// 1. Delete items module folder
+async function prompt(question: string): Promise<string> {
+  process.stdout.write(question);
+  for await (const line of console) {
+    return line.trim();
+  }
+  return '';
+}
+
+// ─── Ask for project name ─────────────────────────────────────
+
+console.log('\n┌─────────────────────────────────────────┐');
+console.log('│        bun-monorepo-template setup      │');
+console.log('└─────────────────────────────────────────┘\n');
+
+const rawName = await prompt('Project name (e.g. my-saas): ');
+
+if (!rawName) {
+  console.error('\n  Error: project name cannot be empty.\n');
+  process.exit(1);
+}
+
+const projectName = toKebabCase(rawName);
+
+if (projectName !== rawName.trim().toLowerCase()) {
+  console.log(`\n  → Name normalized to: "${projectName}"`);
+}
+
+console.log(`\nSetting up project "${projectName}"...\n`);
+
+// ─── Step 1: Delete items backend module ─────────────────────
+
 removeDir(
   resolve(BACKEND, 'src/modules/items'),
   'Deleted apps/backend/src/modules/items/',
 );
 
-// 2. Remove items route from app.ts
+// ─── Step 2: Remove items route from app.ts ──────────────────
+
 await editFile(
   resolve(BACKEND, 'src/app.ts'),
   [
@@ -93,7 +135,8 @@ await editFile(
   'Removed items route from app.ts',
 );
 
-// 3. Remove itemsTable from schema barrel
+// ─── Step 3: Remove itemsTable from schema barrel ────────────
+
 await editFile(
   resolve(BACKEND, 'src/infrastructure/db/schema.ts'),
   [
@@ -102,13 +145,15 @@ await editFile(
   'Removed itemsTable from infrastructure/db/schema.ts',
 );
 
-// 4. Delete item schema file
+// ─── Step 4: Delete item schema file ─────────────────────────
+
 removeFile(
   resolve(SHARED, 'src/schemas/item.schema.ts'),
   'Deleted packages/shared/src/schemas/item.schema.ts',
 );
 
-// 5. Remove item exports from shared index
+// ─── Step 5: Remove item exports from shared index ───────────
+
 await editFile(
   resolve(SHARED, 'src/index.ts'),
   [
@@ -129,13 +174,55 @@ await editFile(
   'Removed item exports from packages/shared/src/index.ts',
 );
 
-// 6. Delete item domain folder (API, service, validations)
+// ─── Step 6: Delete item domain folder ───────────────────────
+
 removeDir(
   resolve(FRONTEND, 'src/domain/item'),
   'Deleted apps/frontend/src/domain/item/',
 );
 
-// 7. Replace Home page with minimal authenticated landing
+// ─── Step 7: Delete items page folder ────────────────────────
+
+removeDir(
+  resolve(FRONTEND, 'src/pages/items'),
+  'Deleted apps/frontend/src/pages/items/',
+);
+
+// ─── Step 8: Remove /items route from index.tsx ──────────────
+
+await editFile(
+  resolve(FRONTEND, 'src/index.tsx'),
+  [
+    ["import Items from './pages/items/Items';\n", ''],
+    ["        <Route path=\"/items\" component={Items} />\n", ''],
+  ],
+  'Removed /items route from index.tsx',
+);
+
+// ─── Step 9: Remove Items nav entry and BoxIcon ───────────────
+
+await editFile(
+  resolve(FRONTEND, 'src/components/AppLayout.tsx'),
+  [
+    [
+      `function BoxIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class} fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+    </svg>
+  );
+}
+
+`,
+      '',
+    ],
+    [`  { label: 'Items', href: '/items', icon: BoxIcon },\n`, ''],
+  ],
+  'Removed Items nav entry and BoxIcon from AppLayout.tsx',
+);
+
+// ─── Step 10: Replace Home page ───────────────────────────────
+
 await writeFile(
   resolve(FRONTEND, 'src/pages/home/home.ctrl.ts'),
   `import { createStore } from 'solid-js/store';
@@ -187,28 +274,60 @@ export default function Home() {
   'Replaced Home.tsx with minimal landing page',
 );
 
-// 8. Remove Items nav entry and BoxIcon from AppLayout.tsx
-await editFile(
-  resolve(FRONTEND, 'src/components/AppLayout.tsx'),
-  [
-    [
-      `function BoxIcon(props: { class?: string }) {
-  return (
-    <svg class={props.class} fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-    </svg>
-  );
+// ─── Step 11: Rename project in package.json files ────────────
+
+async function renameInPackageJson(path: string, replacements: [string, string][], label: string) {
+  if (!existsSync(path)) return;
+  const raw = await Bun.file(path).text();
+  const pkg = JSON.parse(raw);
+  let modified = false;
+  for (const [from, to] of replacements) {
+    if (pkg.name === from) {
+      pkg.name = to;
+      modified = true;
+    }
+  }
+  if (modified) {
+    await Bun.write(path, `${JSON.stringify(pkg, null, 2)}\n`);
+    log(label);
+    changes++;
+  }
 }
 
-`,
-      '',
-    ],
-    [`  { label: 'Items', href: '/items', icon: BoxIcon },\n`, ''],
-  ],
-  'Removed Items nav entry and BoxIcon from AppLayout.tsx',
+await renameInPackageJson(
+  resolve(ROOT, 'package.json'),
+  [['bun-monorepo-template', projectName]],
+  `Renamed root package.json → "${projectName}"`,
 );
 
-// 9. Delete old database and migrations
+await renameInPackageJson(
+  resolve(BACKEND, 'package.json'),
+  [['backend', `${projectName}-api`]],
+  `Renamed backend package.json → "${projectName}-api"`,
+);
+
+await renameInPackageJson(
+  resolve(FRONTEND, 'package.json'),
+  [['frontend', `${projectName}-web`]],
+  `Renamed frontend package.json → "${projectName}-web"`,
+);
+
+await renameInPackageJson(
+  resolve(SHARED, 'package.json'),
+  [['@repo/shared', `@${projectName}/shared`]],
+  `Renamed shared package.json → "@${projectName}/shared"`,
+);
+
+// ─── Step 12: Update render.yaml service name ─────────────────
+
+await editFile(
+  resolve(ROOT, 'render.yaml'),
+  [['    name: api\n', `    name: ${projectName}-api\n`]],
+  `Updated render.yaml service name → "${projectName}-api"`,
+);
+
+// ─── Step 13: Delete old database and migrations ──────────────
+
 removeFile(
   resolve(BACKEND, 'local.db'),
   'Deleted local.db',
@@ -218,14 +337,15 @@ removeDir(
   'Deleted old migrations',
 );
 
-// ─── Summary ─────────────────────────────────────────────────
+// ─── Summary ──────────────────────────────────────────────────
 
 if (changes > 0) {
   console.log(`\nDone! ${changes} changes applied.\n`);
   console.log('Next steps:');
-  console.log('  1. bun run db:generate    # Generate migration for schema changes');
-  console.log('  2. bun run db:migrate     # Apply migrations to database');
-  console.log('  3. bun run dev            # Start building\n');
+  console.log('  1. bun install            # Update workspace references after rename');
+  console.log('  2. bun run db:generate    # Generate migration for the clean schema');
+  console.log('  3. bun run db:migrate     # Apply migrations to local database');
+  console.log('  4. bun run dev            # Start building\n');
 } else {
-  console.log('\nNothing to clean — items module already removed.\n');
+  console.log('\nNothing to clean — template already set up.\n');
 }

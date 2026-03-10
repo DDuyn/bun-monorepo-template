@@ -25,9 +25,12 @@ async function loadDotEnvFromRoot() {
 
 await loadDotEnvFromRoot();
 
+// Absolute path so local.db always lives in apps/backend/ regardless of cwd
+const localDbDefault = `file:${resolve(import.meta.dir, '../../../local.db')}`;
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
-  TURSO_DATABASE_URL: z.string().default('file:./local.db'),
+  TURSO_DATABASE_URL: z.string().default(localDbDefault),
   TURSO_AUTH_TOKEN: z.string().optional(),
   JWT_SECRET: z.string().min(1),
 });
