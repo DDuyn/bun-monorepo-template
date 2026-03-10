@@ -14,6 +14,9 @@ export function createApp() {
   app.use('*', cors());
   app.use('*', errorHandler);
 
+  // Root route — silences 404s from Render health checks and browser pre-requests
+  app.get('/', (c) => c.redirect('/api/health', 301));
+
   // Routes
   app.route('/api/health', healthApi);
   app.route('/api/auth', authApi);

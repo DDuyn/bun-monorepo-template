@@ -134,6 +134,9 @@ export type LoggerEnv = {
   Variables: { log: RequestLogger };
 };
 
+// Paths that generate noise without value (browser auto-requests, static assets)
+const SILENT_PATHS = new Set(['/favicon.ico', '/robots.txt']);
+
 // ---- Middleware de request logging ----
 
 export const structuredLogger = createMiddleware<LoggerEnv>(async (c, next) => {
@@ -146,6 +149,9 @@ export const structuredLogger = createMiddleware<LoggerEnv>(async (c, next) => {
   c.set('log', requestLog);
 
   await next();
+
+  // Skip logging for noisy paths that carry no business value
+  if (SILENT_PATHS.has(c.req.path)) return;
 
   const duration = Date.now() - start;
   const status = c.res.status;
