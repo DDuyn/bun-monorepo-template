@@ -3,25 +3,29 @@ import type { Navigator } from '@solidjs/router';
 import { setToken } from '../../lib/api-client';
 import { login, register } from '../../domain/auth/auth.service';
 import type { FieldErrors } from '../../domain/validation';
+import type { useToast } from '../../context/toast.context';
 
-export function createLoginCtrl(navigate: Navigator, loadUser: () => Promise<void>) {
+export function createLoginCtrl(
+  navigate: Navigator,
+  loadUser: () => Promise<void>,
+  toast: ReturnType<typeof useToast>,
+) {
   const [state, setState] = createStore({
     email: '',
     password: '',
     name: '',
     isRegister: false,
     errors: {} as FieldErrors,
-    generalError: '',
     loading: false,
   });
 
   function toggleMode() {
-    setState({ isRegister: !state.isRegister, errors: {}, generalError: '' });
+    setState({ isRegister: !state.isRegister, errors: {} });
   }
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
-    setState({ errors: {}, generalError: '', loading: true });
+    setState({ errors: {}, loading: true });
 
     const result = state.isRegister
       ? await register(state.email, state.password, state.name)
@@ -31,7 +35,8 @@ export function createLoginCtrl(navigate: Navigator, loadUser: () => Promise<voi
       if ('fieldErrors' in result) {
         setState({ errors: result.fieldErrors, loading: false });
       } else {
-        setState({ generalError: result.error.message, loading: false });
+        toast.error(result.error.message);
+        setState('loading', false);
       }
       return;
     }

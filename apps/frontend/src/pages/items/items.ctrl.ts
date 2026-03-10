@@ -4,14 +4,14 @@ import { clearToken, isAuthenticated } from '../../lib/api-client';
 import { listItems, createItem, toggleItem, deleteItem } from '../../domain/item/item.service';
 import type { ItemResponse } from '@repo/shared';
 import type { FieldErrors } from '../../domain/validation';
+import type { useToast } from '../../context/toast.context';
 
-export function createItemsCtrl(navigate: Navigator) {
+export function createItemsCtrl(navigate: Navigator, toast: ReturnType<typeof useToast>) {
   const [state, setState] = createStore({
     items: [] as ItemResponse[],
     newName: '',
     loading: true,
     errors: {} as FieldErrors,
-    generalError: '',
   });
 
   async function init() {
@@ -35,26 +35,27 @@ export function createItemsCtrl(navigate: Navigator) {
 
   async function handleCreate(e: Event) {
     e.preventDefault();
-    setState({ errors: {}, generalError: '' });
+    setState('errors', {});
 
     const result = await createItem(state.newName.trim());
     if (!result.ok) {
       if ('fieldErrors' in result) {
-        setState({ errors: result.fieldErrors });
+        setState('errors', result.fieldErrors);
       } else {
-        setState({ generalError: result.error.message });
+        toast.error(result.error.message);
       }
       return;
     }
 
     setState('newName', '');
+    toast.success('Item created');
     await loadItems();
   }
 
   async function handleToggle(item: ItemResponse) {
     const result = await toggleItem(item);
     if (!result.ok) {
-      setState({ generalError: result.error.message });
+      toast.error(result.error.message);
       return;
     }
     await loadItems();
@@ -63,9 +64,10 @@ export function createItemsCtrl(navigate: Navigator) {
   async function handleDelete(id: string) {
     const result = await deleteItem(id);
     if (!result.ok) {
-      setState({ generalError: result.error.message });
+      toast.error(result.error.message);
       return;
     }
+    toast.success('Item deleted');
     await loadItems();
   }
 

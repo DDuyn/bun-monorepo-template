@@ -1,7 +1,9 @@
 import { Show, onMount } from 'solid-js';
+import { ErrorBoundary } from 'solid-js';
 import { useLocation } from '@solidjs/router';
 import type { RouteSectionProps } from '@solidjs/router';
 import { AppLayout } from './AppLayout';
+import { ErrorFallback } from './ErrorFallback';
 import { useAuth } from '../context/auth.context';
 
 export default function Layout(props: RouteSectionProps) {
@@ -17,9 +19,17 @@ export default function Layout(props: RouteSectionProps) {
   return (
     <Show
       when={location.pathname !== '/login'}
-      fallback={<>{props.children}</>}
+      fallback={
+        <ErrorBoundary fallback={(err, reset) => <ErrorFallback error={err} reset={reset} />}>
+          {props.children}
+        </ErrorBoundary>
+      }
     >
-      <AppLayout>{props.children}</AppLayout>
+      <AppLayout>
+        <ErrorBoundary fallback={(err, reset) => <ErrorFallback error={err} reset={reset} />}>
+          {props.children}
+        </ErrorBoundary>
+      </AppLayout>
     </Show>
   );
 }

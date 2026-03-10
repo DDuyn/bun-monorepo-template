@@ -1,13 +1,15 @@
 import { useNavigate } from '@solidjs/router';
 import { createLoginCtrl } from './login.ctrl';
 import { useAuth } from '../../context/auth.context';
+import { useToast } from '../../context/toast.context';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 
 export default function Login() {
   const navigate = useNavigate();
   const auth = useAuth();
-  const ctrl = createLoginCtrl(navigate, auth.loadUser);
+  const toast = useToast();
+  const ctrl = createLoginCtrl(navigate, auth.loadUser, toast);
 
   return (
     <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -24,12 +26,6 @@ export default function Login() {
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
-          {ctrl.state.generalError && (
-            <div class="bg-danger-light text-danger text-sm rounded-lg px-4 py-3 mb-5">
-              {ctrl.state.generalError}
-            </div>
-          )}
-
           <form onSubmit={ctrl.handleSubmit} noValidate class="space-y-5">
             {ctrl.state.isRegister && (
               <Input

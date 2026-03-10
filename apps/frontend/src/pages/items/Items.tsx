@@ -1,12 +1,14 @@
 import { onMount, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { createItemsCtrl } from './items.ctrl';
+import { useToast } from '../../context/toast.context';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 
 export default function Items() {
   const navigate = useNavigate();
-  const ctrl = createItemsCtrl(navigate);
+  const toast = useToast();
+  const ctrl = createItemsCtrl(navigate, toast);
 
   onMount(() => ctrl.init());
 
@@ -16,12 +18,6 @@ export default function Items() {
         <h1 class="text-2xl font-semibold text-gray-900">Items</h1>
         <p class="text-sm text-gray-500 mt-0.5">Manage your items below</p>
       </div>
-
-      {ctrl.state.generalError && (
-        <div class="bg-danger-light text-danger text-sm rounded-lg px-4 py-3 mb-5">
-          {ctrl.state.generalError}
-        </div>
-      )}
 
       <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-6">
         <form onSubmit={ctrl.handleCreate} class="flex gap-3">
