@@ -19,15 +19,14 @@ export async function errorHandler(c: Context, next: Next) {
   try {
     await next();
   } catch (error) {
-    // c.var.log puede no estar disponible si el middleware de logging no se montó
     const log = c.var.log;
     if (log) {
-      log.error('unhandled_exception', {
+      log.error("unhandled_exception", {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
     } else {
-      console.error('Unhandled error:', error);
+      console.error("Unhandled error:", error);
     }
     return c.json(
       { code: "INTERNAL_ERROR", message: "Internal server error" },
