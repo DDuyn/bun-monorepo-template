@@ -35,6 +35,7 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'UNAUTHORIZED'
   | 'CONFLICT'
+  | 'RATE_LIMITED'
   | 'INTERNAL_ERROR';
 
 export interface AppError {
@@ -56,6 +57,10 @@ export function unauthorizedError(message: string): AppError {
 
 export function conflictError(message: string): AppError {
   return { code: 'CONFLICT', message };
+}
+
+export function rateLimitedError(message: string): AppError {
+  return { code: 'RATE_LIMITED', message };
 }
 
 export function internalError(message: string): AppError {

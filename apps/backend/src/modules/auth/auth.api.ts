@@ -4,6 +4,7 @@ import { db } from '../../infrastructure/db/client';
 import { env } from '../../config/env';
 import { jwtGuard } from '../../middleware/jwt';
 import { errorToStatus } from '../../middleware/error-handler';
+import { createRateLimit } from '../../middleware/rate-limit';
 import { createAuthRepository } from './infrastructure/auth.repository';
 import { createRegister } from './use-cases/register';
 import { createLogin } from './use-cases/login';
@@ -18,7 +19,12 @@ const register = createRegister(repository, env.JWT_SECRET);
 const login = createLogin(repository, env.JWT_SECRET);
 const getMe = createGetMe(repository);
 
-auth.post('/register', async (c) => {
+const authRateLimit = createRateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX,
+});
+
+auth.post('/register', authRateLimit, async (c) => {
   const body = await c.req.json();
   const parsed = registerInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -35,7 +41,7 @@ auth.post('/register', async (c) => {
   return c.json(result.value, 201);
 });
 
-auth.post('/login', async (c) => {
+auth.post('/login', authRateLimit, async (c) => {
   const body = await c.req.json();
   const parsed = loginInputSchema.safeParse(body);
   if (!parsed.success) {

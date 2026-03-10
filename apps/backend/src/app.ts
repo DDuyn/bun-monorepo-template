@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
+import { structuredLogger } from './middleware/logger';
 import { errorHandler } from './middleware/error-handler';
 import { healthApi } from './modules/health/health.api';
 import { authApi } from './modules/auth/auth.api';
@@ -10,7 +10,7 @@ export function createApp() {
   const app = new Hono();
 
   // Global middleware
-  app.use('*', logger());
+  app.use('*', structuredLogger);
   app.use('*', cors());
   app.use('*', errorHandler);
 
