@@ -34,6 +34,13 @@ export async function request<T>(
     headers,
   });
 
+  if (response.status === 401) {
+    clearToken();
+    window.location.href = '/login';
+    // Return a never-resolving promise so calling code does not continue
+    return new Promise(() => {});
+  }
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Request failed' }));
     throw new Error(error.message || `HTTP ${response.status}`);

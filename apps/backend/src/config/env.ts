@@ -32,6 +32,8 @@ const envSchema = z.object({
   TURSO_DATABASE_URL: z.string().default(localDbDefault),
   TURSO_AUTH_TOKEN: z.string().optional(),
   JWT_SECRET: z.string().min(1),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  CORS_ORIGIN: z.string().default("*"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().default(10),
   BETTERSTACK_SOURCE_TOKEN: z.string().optional(),

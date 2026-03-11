@@ -10,13 +10,18 @@ import {
 } from '@repo/shared';
 import type { RequestLogger } from '../../../middleware/logger';
 import type { AuthRepository } from '../infrastructure/auth.repository';
+import { parseDurationToSeconds } from '../../../lib/duration';
 
 export type Login = (
   input: LoginInput,
   log?: RequestLogger,
 ) => Promise<Result<AuthResponse, AppError>>;
 
-export function createLogin(repository: AuthRepository, jwtSecret: string): Login {
+export function createLogin(
+  repository: AuthRepository,
+  jwtSecret: string,
+  expiresIn = '7d',
+): Login {
   return async (input, log) => {
     const user = await repository.findByEmail(input.email);
     if (!user) {
@@ -30,7 +35,8 @@ export function createLogin(repository: AuthRepository, jwtSecret: string): Logi
       return err(unauthorizedError('Invalid email or password'));
     }
 
-    const token = await sign({ userId: user.id, email: user.email }, jwtSecret);
+    const exp = Math.floor(Date.now() / 1000) + parseDurationToSeconds(expiresIn);
+    const token = await sign({ userId: user.id, email: user.email, exp }, jwtSecret);
 
     log?.info('user_logged_in', { userId: user.id, email: user.email });
 

@@ -77,15 +77,29 @@ bun-monorepo-template/
 │       │   │   ├── login/
 │       │   │   │   ├── Login.tsx            # Vista pura (solo JSX)
 │       │   │   │   └── login.ctrl.ts        # Controlador (signals + handlers)
-│       │   │   └── home/
-│       │   │       ├── Home.tsx             # Vista pura (solo JSX)
-│       │   │       └── home.ctrl.ts         # Controlador (signals + handlers)
+│       │   │   ├── home/
+│       │   │   │   ├── Home.tsx
+│       │   │   │   └── home.ctrl.ts
+│       │   │   ├── profile/
+│       │   │   │   ├── Profile.tsx
+│       │   │   │   └── profile.ctrl.ts
+│       │   │   └── items/
+│       │   │       ├── Items.tsx
+│       │   │       └── items.ctrl.ts
 │       │   ├── components/       # Layout, componentes compartidos
-│       │   │   ├── Layout.tsx
-│       │   │   └── ui/           # Componentes reutilizables (Input, Button, ...)
+│       │   │   ├── AppLayout.tsx            # Layout principal con sidebar + navbar
+│       │   │   ├── Sidebar.tsx
+│       │   │   ├── Navbar.tsx
+│       │   │   ├── ErrorFallback.tsx
+│       │   │   ├── ToastContainer.tsx
+│       │   │   └── ui/           # Componentes reutilizables
 │       │   │       ├── Input.tsx
-│       │   │       └── Button.tsx
-│       │   ├── lib/api-client.ts # Transporte HTTP genérico + token utils
+│       │   │       ├── Button.tsx
+│       │   │       └── Toast.tsx
+│       │   ├── context/          # Contextos de SolidJS (providers)
+│       │   │   ├── auth.context.tsx         # AuthProvider: loadUser, clearUser, user signal
+│       │   │   └── toast.context.tsx        # ToastProvider: show/hide toasts
+│       │   ├── lib/api-client.ts # Transporte HTTP genérico + token utils + 401 redirect
 │       │   └── index.tsx         # Entry point, rutas
 │       └── public/_redirects     # SPA routing para Cloudflare Pages
 ├── packages/
@@ -352,6 +366,7 @@ Componentes de UI reutilizables para evitar repetir estilos de Tailwind en cada 
 Cliente HTTP genérico reutilizable por todos los dominios:
 
 - `request<T>(path, options)` — Fetch genérico con JSON, Bearer token automático, manejo de errores
+- **401 automático**: si el servidor responde 401 (token expirado o inválido), limpia el token y redirige a `/login`
 - `setToken(token)` / `clearToken()` / `isAuthenticated()` — Gestión de JWT en `localStorage`
 - **`VITE_API_URL`** como variable de entorno para la URL base de la API
 
@@ -652,3 +667,44 @@ ORDER BY timestamp DESC
 - Los logs se acumulan en memoria y se envían en batch cada 1 segundo, o cuando hay 10+ entradas.
 - Si el proceso termina, se hace un flush final con `beforeExit`.
 - Si el envío a Betterstack falla (red, token inválido), los logs se descartan silenciosamente — la app no se ve afectada.
+
+---
+
+## Autenticación JWT
+
+### Token con expiración
+
+Los tokens JWT incluyen un claim `exp` (Unix timestamp en segundos). La duración es configurable:
+
+| Variable | Default | Valores de ejemplo |
+|----------|---------|-------------------|
+| `JWT_EXPIRES_IN` | `7d` | `1d`, `7d`, `24h`, `3600s` |
+
+La función `parseDurationToSeconds` (en `src/lib/duration.ts`) convierte formatos de duración a segundos. Unidades soportadas: `s`, `m`, `h`, `d`.
+
+### Endpoints de auth
+
+| Endpoint | Protección | Descripción |
+|----------|-----------|-------------|
+| `POST /api/auth/register` | Rate limit | Crea cuenta, devuelve JWT |
+| `POST /api/auth/login` | Rate limit | Autentica, devuelve JWT |
+| `GET /api/auth/me` | JWT guard | Devuelve perfil del usuario autenticado |
+| `POST /api/auth/refresh` | JWT guard | Emite nuevo token con nueva expiración |
+
+### Refresh token
+
+El endpoint `POST /api/auth/refresh` (use-case `createRefreshToken`) verifica que el usuario sigue existiendo en BD y emite un token nuevo con `exp` renovado. Requiere un token **válido** (no acepta tokens expirados).
+
+El frontend **no** hace refresh automático. Al recibir 401, `api-client.ts` limpia el token y redirige a `/login`.
+
+---
+
+## CORS
+
+Configurado via `hono/cors` con la variable `CORS_ORIGIN`:
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `CORS_ORIGIN` | `*` | Origen permitido. En producción, pon el dominio del frontend (ej: `https://mi-app.pages.dev`) |
+
+Si `NODE_ENV=production` y `CORS_ORIGIN=*`, el backend emite un warning en stdout al arrancar.

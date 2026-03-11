@@ -67,12 +67,27 @@ No necesitas Turso para desarrollar. El `TURSO_DATABASE_URL=file:./local.db` del
 
 En el dashboard de Render → tu servicio → **Environment**, añade:
 
+**Requeridas:**
+
 | Variable             | Valor                                      |
 | -------------------- | ------------------------------------------ |
 | `PORT`               | `3000`                                     |
+| `NODE_ENV`           | `production`                               |
 | `JWT_SECRET`         | Un string aleatorio seguro (genera uno con `openssl rand -hex 32`) |
 | `TURSO_DATABASE_URL` | La URL de Turso del paso 1.2               |
 | `TURSO_AUTH_TOKEN`   | El token de Turso del paso 1.2             |
+
+**Opcionales:**
+
+| Variable                    | Default              | Descripción                                           |
+| --------------------------- | -------------------- | ----------------------------------------------------- |
+| `JWT_EXPIRES_IN`            | `7d`                 | Duración del JWT. Formatos: `7d`, `24h`, `3600s`      |
+| `CORS_ORIGIN`               | `*`                  | Dominio permitido. Pon el dominio de tu frontend en producción (ej: `https://mi-app.pages.dev`) |
+| `LOG_LEVEL`                 | `warn` (prod)        | Nivel mínimo enviado a Betterstack: `info`, `warn`, `error` |
+| `BETTERSTACK_SOURCE_TOKEN`  | —                    | Token de Betterstack. Sin él, los logs solo van a stdout |
+| `BETTERSTACK_HOST`          | `in.logs.betterstack.com` | Host de ingesta de Betterstack               |
+| `RATE_LIMIT_WINDOW_MS`      | `900000` (15 min)    | Ventana del rate limiter en milisegundos              |
+| `RATE_LIMIT_MAX`            | `10`                 | Máximo de peticiones por ventana por IP               |
 
 ### 2.3 Desactivar Auto-Deploy
 

@@ -11,7 +11,7 @@ Fullstack TypeScript monorepo template with **Bun**, **Hono**, **SolidJS**, and 
 | Backend     | Hono                                |
 | Frontend    | SolidJS + Vite                      |
 | Database    | Turso (libSQL) + Drizzle ORM        |
-| Auth        | JWT (register + login)              |
+| Auth        | JWT (register + login + refresh)    |
 | Validation  | Zod                                 |
 | Styling     | TailwindCSS v4                      |
 | Testing     | Bun test                            |
@@ -58,6 +58,7 @@ The backend runs on `http://localhost:3000` and the frontend on `http://localhos
 | `bun run dev:web`  | Start frontend only                  |
 | `bun run test`     | Run all tests                        |
 | `bun run test:api` | Run backend tests only               |
+| `bun run typecheck` | Type-check all apps with tsc        |
 | `bun run lint`     | Lint with Biome                      |
 | `bun run lint:fix` | Lint and auto-fix                    |
 | `bun run build`    | Build all apps                       |
@@ -98,6 +99,7 @@ modules/
 **Auth** (public):
 - `POST /api/auth/register` - Create account
 - `POST /api/auth/login` - Sign in
+- `POST /api/auth/refresh` - Refresh JWT token (requires valid token)
 
 **Items** (JWT protected):
 - `GET /api/items` - List items (paginated)

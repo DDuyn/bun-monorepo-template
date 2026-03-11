@@ -10,15 +10,17 @@ import { createAuthRepository } from './infrastructure/auth.repository';
 import { createRegister } from './use-cases/register';
 import { createLogin } from './use-cases/login';
 import { createGetMe } from './use-cases/get-me';
+import { createRefreshToken } from './use-cases/refresh-token';
 
 type Env = { Variables: { jwtPayload: JwtPayload } } & LoggerEnv;
 
 const auth = new Hono<Env>();
 
 const repository = createAuthRepository(db);
-const register = createRegister(repository, env.JWT_SECRET);
-const login = createLogin(repository, env.JWT_SECRET);
+const register = createRegister(repository, env.JWT_SECRET, env.JWT_EXPIRES_IN);
+const login = createLogin(repository, env.JWT_SECRET, env.JWT_EXPIRES_IN);
 const getMe = createGetMe(repository);
+const refreshToken = createRefreshToken(repository, env.JWT_SECRET, env.JWT_EXPIRES_IN);
 
 const authRateLimit = createRateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
@@ -62,6 +64,15 @@ auth.post('/login', authRateLimit, async (c) => {
 auth.get('/me', jwtGuard, async (c) => {
   const { userId } = c.get('jwtPayload');
   const result = await getMe(userId);
+  if (!result.ok) {
+    return c.json(result.error, errorToStatus(result.error.code));
+  }
+  return c.json(result.value);
+});
+
+auth.post('/refresh', jwtGuard, async (c) => {
+  const { userId } = c.get('jwtPayload');
+  const result = await refreshToken(userId);
   if (!result.ok) {
     return c.json(result.error, errorToStatus(result.error.code));
   }

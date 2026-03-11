@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test';
+import { decode } from 'hono/jwt';
 import { isOk, isErr } from '@repo/shared';
 import { User } from '../domain/user';
 import type { AuthRepository } from '../infrastructure/auth.repository';
@@ -84,6 +85,30 @@ describe('Login', () => {
     expect(isErr(result)).toBe(true);
     if (!result.ok) {
       expect(result.error.code).toBe('UNAUTHORIZED');
+    }
+  });
+
+  it('should issue a token with exp claim', async () => {
+    const repo = createMockRepository();
+    const register = createRegister(repo, JWT_SECRET);
+    const login = createLogin(repo, JWT_SECRET, '7d');
+
+    await register({
+      email: 'test@example.com',
+      password: 'password123',
+      name: 'Test User',
+    });
+
+    const result = await login({ email: 'test@example.com', password: 'password123' });
+
+    expect(isOk(result)).toBe(true);
+    if (result.ok) {
+      const { payload } = decode(result.value.token);
+      expect(payload.exp).toBeDefined();
+      // exp should be roughly 7 days from now (within a 5-second tolerance)
+      const expectedExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+      expect(payload.exp as number).toBeGreaterThan(expectedExp - 5);
+      expect(payload.exp as number).toBeLessThanOrEqual(expectedExp + 5);
     }
   });
 });
