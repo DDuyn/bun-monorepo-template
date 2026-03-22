@@ -23,6 +23,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Architecture check
+        run: bun run arch-check
+
       - name: Type check
         run: bun run typecheck
 

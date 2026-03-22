@@ -16,6 +16,7 @@
     "db:migrate": "bun run --filter backend db:migrate",
     "clean": "bun run scripts/clean-template.ts",
     "generate": "bun run scripts/generate-feature.ts",
+    "arch-check": "bun run scripts/arch-check.ts",
     "postinstall": "lefthook install || true"
   },
   "devDependencies": {

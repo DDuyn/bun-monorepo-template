@@ -523,6 +523,61 @@ El script detectó 4 bugs al usarse en un proyecto real. Ya están corregidos:
 
 ---
 
+## Architecture Check
+
+`scripts/arch-check.ts` es un linter de arquitectura estático que se ejecuta como parte del pre-push hook y del CI. Cero dependencias externas — usa `Bun.Glob` + regex.
+
+### Script
+
+```bash
+bun run arch-check
+```
+
+### Reglas que valida
+
+| Regla | Qué detecta | Solución |
+|-------|-------------|---------|
+| `no-throw-in-use-cases` | `throw` dentro de `use-cases/` | Usar `return err(appError(...))` |
+| `no-class-outside-domain` | `class` declaraciones fuera de `domain/` (en use-cases, infrastructure, API files) | Convertir a factory function |
+| `no-console-log` | `console.log(` en código de producción (excluye tests, setup, logger.ts, index.ts) | Usar `c.var.log?.info/warn/error(...)` |
+
+En **proyectos derivados** (clonados del template), se puede añadir una regla adicional:
+
+| Regla | Qué detecta | Solución |
+|-------|-------------|---------|
+| `no-repo-shared-import` | `from '@repo/shared'` en `apps/` o `packages/` | Actualizar al nombre del proyecto (`@{name}/shared`) |
+
+Esta regla no existe en el template porque `@repo/shared` es el nombre correcto aquí.
+
+### Integración
+
+Añadido como job al pre-push de Lefthook (paralelo con lint, typecheck, test) y como step en `ci.yml` (entre lint y typecheck). Falla con mensaje claro indicando fichero, línea y cómo corregirlo.
+
+### Comportamiento post-clean
+
+`scripts/clean-template.ts` ya reemplaza `@repo/shared` en todos los `.ts/.tsx` al bootstrappear, por lo que la regla `no-repo-shared-import` no debería dispararse en proyectos bien configurados.
+
+---
+
+## Ficheros de instrucciones para IA
+
+### `.opencode/instructions.md`
+
+Instrucciones que OpenCode lee automáticamente al abrir el proyecto. Contiene:
+- Idioma (castellano)
+- Patrones obligatorios (Result, factory functions, TDD)
+- Arquitectura frontend (3 capas)
+- Naming conventions
+- Workflow de desarrollo
+
+### `.github/copilot-instructions.md`
+
+Instrucciones para GitHub Copilot Chat en VSCode. Mismo contenido que el anterior pero adaptado al formato que Copilot consume — más conciso, orientado a sugerencias de código.
+
+Ambos ficheros se crean en el template con referencias genéricas (`@repo/shared`) y se heredan en proyectos clonados. El `clean-template.ts` actualiza `@repo/shared` a `@{projectName}/shared` en los ficheros `.ts/.tsx` de `apps/` y `packages/`, pero **no en los ficheros de instrucciones** — actualizar manualmente esa referencia en `.opencode/instructions.md` y `.github/copilot-instructions.md` tras el clean.
+
+---
+
 ## Generator de features
 
 `scripts/generate-feature.ts` genera un módulo CRUD completo (backend + shared, NO frontend) a partir de un nombre:
