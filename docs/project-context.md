@@ -447,7 +447,7 @@ Los tests de integración verifican la capa HTTP completa con `app.request()` de
 - `apps/backend/src/tests/setup.ts` — setea env vars críticas ANTES de que cualquier módulo se importe: `JWT_SECRET`, `TURSO_DATABASE_URL=file::memory:`, `NODE_ENV=test`, `RATE_LIMIT_MAX=10000`, `RATE_LIMIT_WINDOW_MS=1`
 - `apps/backend/src/tests/test-helpers.ts` — helpers reutilizables: `createTestApp()` (aplica migraciones Drizzle, singleton por proceso), `createTestToken()`, `registerTestUser()`
 - `apps/backend/src/tests/auth.integration.test.ts` — 12 tests HTTP de auth (register, login, me, refresh)
-- `apps/backend/src/tests/items.integration.test.ts` — 13 tests HTTP de items (auth guard, CRUD, ownership)
+- `apps/backend/src/tests/items.integration.test.ts` — 13 tests HTTP de items (auth guard, CRUD, ownership) — **eliminado por `clean-template.ts`**
 
 **Patrón de test de integración:**
 ```ts
@@ -509,6 +509,17 @@ La action `cloudflare/wrangler-action@v3` detecta Bun e intenta usar `bunx` de f
 ## Script de limpieza
 
 `scripts/clean-template.ts` elimina el módulo de ejemplo `items` cuando se bootstrappea un proyecto nuevo desde el template. Limpia archivos, imports en `app.ts`, exports en `schema.ts`, schemas en `@repo/shared`, y la migración baseline.
+
+**Fixes aplicados (v0.7.1):**
+
+El script detectó 4 bugs al usarse en un proyecto real. Ya están corregidos:
+
+1. **Imports `@repo/shared`**: ahora reemplaza `@repo/shared` → `@{projectName}/shared` en todos los `.ts`/`.tsx` bajo `apps/` y `packages/` (función `replaceInSourceFiles` con `Bun.Glob`).
+2. **`--filter` en scripts del root**: ahora actualiza `--filter backend` → `--filter {projectName}-api` y `--filter frontend` → `--filter {projectName}-web` en el root `package.json`.
+3. **`devDependency "backend"`**: ahora actualiza la entrada `"backend": "workspace:*"` a `"{projectName}-api": "workspace:*"` en el root `package.json`.
+4. **`items.integration.test.ts`**: ahora elimina `apps/backend/src/tests/items.integration.test.ts` (causaba 11 fallos en `bun run test` al intentar testear rutas ya eliminadas).
+
+**Implementación**: `renameInPackageJson` ahora opera sobre texto plano con `replaceAll` en lugar de parsear/serializar JSON, lo que permite actualizar claves de `devDependencies` y valores de `scripts` en una sola pasada.
 
 ---
 

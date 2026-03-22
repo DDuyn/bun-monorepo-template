@@ -11,7 +11,8 @@
  * What it does:
  *   1.  Asks for the new project name (e.g. "my-saas")
  *   2.  Deletes apps/backend/src/modules/items/ (entire folder)
- *   3.  Removes items route from apps/backend/src/app.ts
+ *   3.  Deletes apps/backend/src/tests/items.integration.test.ts
+ *   4.  Removes items route from apps/backend/src/app.ts
  *   4.  Removes itemsTable export from infrastructure/db/schema.ts
  *   5.  Deletes packages/shared/src/schemas/item.schema.ts
  *   6.  Removes item schema exports from packages/shared/src/index.ts
@@ -20,9 +21,10 @@
  *   9.  Removes /items route and import from apps/frontend/src/index.tsx
  *   10. Removes Items nav entry and BoxIcon from AppLayout.tsx
  *   11. Replaces Home page with a minimal authenticated landing (controller + view)
- *   12. Renames the project in all package.json files
- *   13. Updates the service name in render.yaml
- *   14. Deletes the old local.db and migrations (you regenerate after cleanup)
+ *   12. Renames the project in all package.json files (name, devDeps, --filter scripts)
+ *   13. Updates @repo/shared imports in all .ts/.tsx source files
+ *   14. Updates the service name in render.yaml
+ *   15. Deletes the old local.db and migrations (you regenerate after cleanup)
  */
 
 import { rmSync, existsSync } from 'node:fs';
@@ -68,6 +70,28 @@ async function editFile(path: string, replacements: [string, string][], label: s
   if (modified) {
     await Bun.write(path, content);
     log(label);
+    changes++;
+  }
+}
+
+async function replaceInSourceFiles(
+  dir: string,
+  search: string,
+  replace: string,
+  label: string,
+) {
+  const glob = new Bun.Glob('**/*.{ts,tsx}');
+  let count = 0;
+  for await (const file of glob.scan({ cwd: dir, absolute: true })) {
+    let content = await Bun.file(file).text();
+    if (content.includes(search)) {
+      content = content.replaceAll(search, replace);
+      await Bun.write(file, content);
+      count++;
+    }
+  }
+  if (count > 0) {
+    log(`${label} (${count} file${count > 1 ? 's' : ''})`);
     changes++;
   }
 }
@@ -122,6 +146,11 @@ console.log(`\nSetting up project "${projectName}"...\n`);
 removeDir(
   resolve(BACKEND, 'src/modules/items'),
   'Deleted apps/backend/src/modules/items/',
+);
+
+removeFile(
+  resolve(BACKEND, 'src/tests/items.integration.test.ts'),
+  'Deleted apps/backend/src/tests/items.integration.test.ts',
 );
 
 // ─── Step 2: Remove items route from app.ts ──────────────────
@@ -279,16 +308,17 @@ export default function Home() {
 async function renameInPackageJson(path: string, replacements: [string, string][], label: string) {
   if (!existsSync(path)) return;
   const raw = await Bun.file(path).text();
-  const pkg = JSON.parse(raw);
+  let content = raw;
   let modified = false;
   for (const [from, to] of replacements) {
-    if (pkg.name === from) {
-      pkg.name = to;
+    // Replace all occurrences as plain text to cover name, devDependencies keys, and script --filter values
+    if (content.includes(from)) {
+      content = content.replaceAll(from, to);
       modified = true;
     }
   }
   if (modified) {
-    await Bun.write(path, `${JSON.stringify(pkg, null, 2)}\n`);
+    await Bun.write(path, content);
     log(label);
     changes++;
   }
@@ -296,7 +326,12 @@ async function renameInPackageJson(path: string, replacements: [string, string][
 
 await renameInPackageJson(
   resolve(ROOT, 'package.json'),
-  [['bun-monorepo-template', projectName]],
+  [
+    ['bun-monorepo-template', projectName],
+    ['--filter backend', `--filter ${projectName}-api`],
+    ['--filter frontend', `--filter ${projectName}-web`],
+    ['"backend": "workspace:*"', `"${projectName}-api": "workspace:*"`],
+  ],
   `Renamed root package.json → "${projectName}"`,
 );
 
@@ -318,7 +353,23 @@ await renameInPackageJson(
   `Renamed shared package.json → "@${projectName}/shared"`,
 );
 
-// ─── Step 12: Update render.yaml service name ─────────────────
+// ─── Step 12: Replace @repo/shared imports in source files ───
+
+await replaceInSourceFiles(
+  resolve(ROOT, 'apps'),
+  '@repo/shared',
+  `@${projectName}/shared`,
+  `Updated @repo/shared imports → "@${projectName}/shared" in apps/`,
+);
+
+await replaceInSourceFiles(
+  resolve(ROOT, 'packages'),
+  '@repo/shared',
+  `@${projectName}/shared`,
+  `Updated @repo/shared imports → "@${projectName}/shared" in packages/`,
+);
+
+// ─── Step 13: Update render.yaml service name ─────────────────
 
 await editFile(
   resolve(ROOT, 'render.yaml'),
@@ -326,7 +377,7 @@ await editFile(
   `Updated render.yaml service name → "${projectName}-api"`,
 );
 
-// ─── Step 13: Delete old database and migrations ──────────────
+// ─── Step 14: Delete old database and migrations ──────────────
 
 removeFile(
   resolve(BACKEND, 'local.db'),
