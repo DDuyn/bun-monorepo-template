@@ -1,43 +1,14 @@
 import { describe, it, expect } from 'bun:test';
 import { isOk, isErr } from '@repo/shared';
 import { Item } from '../domain/item';
-import type { ItemsRepository } from '../infrastructure/items.repository';
 import { createDeleteItem } from '../use-cases/delete-item';
-
-function createMockRepository(): ItemsRepository {
-  const store = new Map<string, Item>();
-
-  return {
-    async findById(id, userId) {
-      const item = store.get(id);
-      if (!item || item.userId !== userId) return null;
-      return item;
-    },
-    async findAllByUser(userId, page, limit) {
-      const all = [...store.values()].filter((i) => i.userId === userId);
-      const offset = (page - 1) * limit;
-      return { items: all.slice(offset, offset + limit), total: all.length };
-    },
-    async create(item) {
-      store.set(item.id, item);
-    },
-    async update(item) {
-      store.set(item.id, item);
-    },
-    async delete(id, userId) {
-      const item = store.get(id);
-      if (!item || item.userId !== userId) return false;
-      store.delete(id);
-      return true;
-    },
-  };
-}
+import { createMockItemsRepository } from './__helpers__/mock-items-repository';
 
 const USER_ID = 'user-1';
 
 describe('DeleteItem', () => {
   it('should delete an existing item', async () => {
-    const repo = createMockRepository();
+    const repo = createMockItemsRepository();
     const item = Item.create('To Delete', 'desc', USER_ID);
     if (!item.ok) return;
     await repo.create(item.value);
@@ -52,7 +23,7 @@ describe('DeleteItem', () => {
   });
 
   it('should return not found for non-existent item', async () => {
-    const deleteItem = createDeleteItem(createMockRepository());
+    const deleteItem = createDeleteItem(createMockItemsRepository());
 
     const result = await deleteItem('non-existent', USER_ID);
     expect(isErr(result)).toBe(true);

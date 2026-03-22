@@ -2,34 +2,14 @@ import { describe, it, expect } from 'bun:test';
 import { decode } from 'hono/jwt';
 import { isOk, isErr } from '@repo/shared';
 import { User } from '../domain/user';
-import type { AuthRepository } from '../infrastructure/auth.repository';
 import { createRegister } from '../use-cases/register';
-
-function createMockRepository(users: User[] = []): AuthRepository {
-  const store = new Map<string, User>();
-  for (const u of users) store.set(u.email, u);
-
-  return {
-    async findByEmail(email) {
-      return store.get(email) ?? null;
-    },
-    async findById(id) {
-      for (const u of store.values()) {
-        if (u.id === id) return u;
-      }
-      return null;
-    },
-    async create(user) {
-      store.set(user.email, user);
-    },
-  };
-}
+import { createMockAuthRepository } from './__helpers__/mock-auth-repository';
 
 const JWT_SECRET = 'test-secret';
 
 describe('Register', () => {
   it('should register a new user successfully', async () => {
-    const register = createRegister(createMockRepository(), JWT_SECRET);
+    const register = createRegister(createMockAuthRepository(), JWT_SECRET);
 
     const result = await register({
       email: 'test@example.com',
@@ -53,7 +33,7 @@ describe('Register', () => {
       passwordHash: 'hash',
       createdAt: new Date(),
     });
-    const register = createRegister(createMockRepository([existingUser]), JWT_SECRET);
+    const register = createRegister(createMockAuthRepository([existingUser]), JWT_SECRET);
 
     const result = await register({
       email: 'test@example.com',
@@ -68,7 +48,7 @@ describe('Register', () => {
   });
 
   it('should issue a token with exp claim', async () => {
-    const register = createRegister(createMockRepository(), JWT_SECRET, '7d');
+    const register = createRegister(createMockAuthRepository(), JWT_SECRET, '7d');
 
     const result = await register({
       email: 'test@example.com',

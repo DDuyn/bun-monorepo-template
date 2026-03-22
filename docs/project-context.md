@@ -425,6 +425,53 @@ push a main
 - **Mock repositories** con `Map` en memoria (sin mocking libraries)
 - Los tests están en `tests/` dentro de cada módulo, un archivo por entidad y uno por use-case
 
+### Mock repository helpers
+
+Los repositorios mock se centralizan en `tests/__helpers__/mock-[feature]-repository.ts` dentro de cada módulo. Usan dos `Map` en memoria para soportar los lookup patterns típicos (ej: `byEmail` + `byId` en auth).
+
+```ts
+// apps/backend/src/modules/auth/tests/__helpers__/mock-auth-repository.ts
+export function createMockAuthRepository(): AuthRepository { ... }
+
+// En tests de use-cases:
+import { createMockAuthRepository } from './__helpers__/mock-auth-repository';
+const repo = createMockAuthRepository();
+```
+
+### Tests de integración HTTP
+
+Los tests de integración verifican la capa HTTP completa con `app.request()` de Hono, usando SQLite in-memory via Drizzle.
+
+**Archivos clave:**
+- `apps/backend/bunfig.toml` — preload del setup de tests: `[test] preload = ["./src/tests/setup.ts"]`
+- `apps/backend/src/tests/setup.ts` — setea env vars críticas ANTES de que cualquier módulo se importe: `JWT_SECRET`, `TURSO_DATABASE_URL=file::memory:`, `NODE_ENV=test`, `RATE_LIMIT_MAX=10000`, `RATE_LIMIT_WINDOW_MS=1`
+- `apps/backend/src/tests/test-helpers.ts` — helpers reutilizables: `createTestApp()` (aplica migraciones Drizzle, singleton por proceso), `createTestToken()`, `registerTestUser()`
+- `apps/backend/src/tests/auth.integration.test.ts` — 12 tests HTTP de auth (register, login, me, refresh)
+- `apps/backend/src/tests/items.integration.test.ts` — 13 tests HTTP de items (auth guard, CRUD, ownership)
+
+**Patrón de test de integración:**
+```ts
+import { createTestApp, createTestToken, registerTestUser } from './test-helpers';
+
+const app = await createTestApp();
+
+test('POST /api/auth/register returns 201', async () => {
+  const res = await app.request('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'user@test.com', password: 'pass123', name: 'User' }),
+  });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as AuthResponse;
+  expect(body.token).toBeDefined();
+});
+```
+
+**Gotchas:**
+- `res.json<T>()` no acepta type args en este tsconfig — usar `(await res.json()) as T`
+- El rate limiter se instancia a nivel de módulo: `RATE_LIMIT_MAX=10000` en setup lo neutraliza
+- Token refresh puede producir JWT idéntico si se llama en el mismo segundo — verificar `userId` en el payload en lugar de `not.toBe(token)`
+
 ---
 
 ## Decisiones técnicas y problemas resueltos
@@ -462,6 +509,49 @@ La action `cloudflare/wrangler-action@v3` detecta Bun e intenta usar `bunx` de f
 ## Script de limpieza
 
 `scripts/clean-template.ts` elimina el módulo de ejemplo `items` cuando se bootstrappea un proyecto nuevo desde el template. Limpia archivos, imports en `app.ts`, exports en `schema.ts`, schemas en `@repo/shared`, y la migración baseline.
+
+---
+
+## Generator de features
+
+`scripts/generate-feature.ts` genera un módulo CRUD completo (backend + shared, NO frontend) a partir de un nombre:
+
+```bash
+bun run generate feature <nombre>
+# Ejemplo:
+bun run generate feature user-profile
+```
+
+**Genera 13 ficheros** para el backend y shared, y **modifica 3**:
+- `packages/shared/src/schemas/[feature].schema.ts` — schemas Zod (create, update, response)
+- `apps/backend/src/modules/[features]/domain/[feature].ts` — entidad de dominio
+- `apps/backend/src/modules/[features]/infrastructure/[features].table.ts` — tabla Drizzle
+- `apps/backend/src/modules/[features]/infrastructure/[features].repository.ts` — repositorio
+- `apps/backend/src/modules/[features]/use-cases/create-[feature].ts`
+- `apps/backend/src/modules/[features]/use-cases/get-[feature].ts`
+- `apps/backend/src/modules/[features]/use-cases/list-[features].ts`
+- `apps/backend/src/modules/[features]/use-cases/update-[feature].ts`
+- `apps/backend/src/modules/[features]/use-cases/delete-[feature].ts`
+- `apps/backend/src/modules/[features]/tests/__helpers__/mock-[features]-repository.ts`
+- `apps/backend/src/modules/[features]/tests/[feature].test.ts`
+- `apps/backend/src/modules/[features]/tests/create-[feature].test.ts`
+- `apps/backend/src/modules/[features]/[features].api.ts`
+
+**Modifica:**
+- `packages/shared/src/index.ts` — añade re-exports del nuevo schema
+- `apps/backend/src/infrastructure/db/schema.ts` — añade export de la nueva tabla
+- `apps/backend/src/app.ts` — añade import y montaje de la nueva API
+
+**Naming conventions:**
+- Módulo/tabla/repositorio/API: plural (`user-profiles`, `userProfilesTable`)
+- Entidad/use-cases: singular (`UserProfile`, `createUserProfile`)
+- `pluralize()` maneja `-y → -ies`, `-s/-x/-z/-ch/-sh → -es`, resto `+s`
+- `toPascalCase()` maneja nombres con guiones (`user-profile → UserProfile`)
+
+**Después de generar**, hay que:
+1. Revisar y personalizar los campos de la entidad y tabla según el dominio
+2. Ejecutar `bun run db:generate` para crear la migración
+3. Ejecutar `bun run typecheck && bun run test` para verificar que todo compila y los tests placeholder pasan
 
 ---
 

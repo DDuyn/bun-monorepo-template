@@ -1,36 +1,15 @@
 import { describe, it, expect } from 'bun:test';
 import { decode } from 'hono/jwt';
 import { isOk, isErr } from '@repo/shared';
-import { User } from '../domain/user';
-import type { AuthRepository } from '../infrastructure/auth.repository';
 import { createRegister } from '../use-cases/register';
 import { createRefreshToken } from '../use-cases/refresh-token';
-
-function createMockRepository(users: User[] = []): AuthRepository {
-  const store = new Map<string, User>();
-  for (const u of users) store.set(u.email, u);
-
-  return {
-    async findByEmail(email) {
-      return store.get(email) ?? null;
-    },
-    async findById(id) {
-      for (const u of store.values()) {
-        if (u.id === id) return u;
-      }
-      return null;
-    },
-    async create(user) {
-      store.set(user.email, user);
-    },
-  };
-}
+import { createMockAuthRepository } from './__helpers__/mock-auth-repository';
 
 const JWT_SECRET = 'test-secret';
 
 describe('RefreshToken', () => {
   it('should issue a new token for a valid user', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const register = createRegister(repo, JWT_SECRET, '7d');
     const refresh = createRefreshToken(repo, JWT_SECRET, '7d');
 
@@ -56,7 +35,7 @@ describe('RefreshToken', () => {
   });
 
   it('should fail if user does not exist', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const refresh = createRefreshToken(repo, JWT_SECRET, '7d');
 
     const result = await refresh('nonexistent-user-id');
@@ -68,7 +47,7 @@ describe('RefreshToken', () => {
   });
 
   it('should issue a token with exp claim', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const register = createRegister(repo, JWT_SECRET, '7d');
     const refresh = createRefreshToken(repo, JWT_SECRET, '7d');
 

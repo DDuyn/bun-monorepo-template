@@ -1,36 +1,15 @@
 import { describe, it, expect } from 'bun:test';
 import { decode } from 'hono/jwt';
 import { isOk, isErr } from '@repo/shared';
-import { User } from '../domain/user';
-import type { AuthRepository } from '../infrastructure/auth.repository';
 import { createRegister } from '../use-cases/register';
 import { createLogin } from '../use-cases/login';
-
-function createMockRepository(users: User[] = []): AuthRepository {
-  const store = new Map<string, User>();
-  for (const u of users) store.set(u.email, u);
-
-  return {
-    async findByEmail(email) {
-      return store.get(email) ?? null;
-    },
-    async findById(id) {
-      for (const u of store.values()) {
-        if (u.id === id) return u;
-      }
-      return null;
-    },
-    async create(user) {
-      store.set(user.email, user);
-    },
-  };
-}
+import { createMockAuthRepository } from './__helpers__/mock-auth-repository';
 
 const JWT_SECRET = 'test-secret';
 
 describe('Login', () => {
   it('should login with correct credentials', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const register = createRegister(repo, JWT_SECRET);
     const login = createLogin(repo, JWT_SECRET);
 
@@ -53,7 +32,7 @@ describe('Login', () => {
   });
 
   it('should fail with wrong email', async () => {
-    const login = createLogin(createMockRepository(), JWT_SECRET);
+    const login = createLogin(createMockAuthRepository(), JWT_SECRET);
 
     const result = await login({
       email: 'nonexistent@example.com',
@@ -67,7 +46,7 @@ describe('Login', () => {
   });
 
   it('should fail with wrong password', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const register = createRegister(repo, JWT_SECRET);
     const login = createLogin(repo, JWT_SECRET);
 
@@ -89,7 +68,7 @@ describe('Login', () => {
   });
 
   it('should issue a token with exp claim', async () => {
-    const repo = createMockRepository();
+    const repo = createMockAuthRepository();
     const register = createRegister(repo, JWT_SECRET);
     const login = createLogin(repo, JWT_SECRET, '7d');
 
